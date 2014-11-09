@@ -1,24 +1,54 @@
-from itertools import islice
+from contextlib import contextmanager
+from itertools import cycle, islice
 import time
 import unittest
 
+import mock
 import redis
 import redrobin
+
+
+MOCK_TIME = True
+TIME_DELTA = 1e-3
+
+
+class MockTime(object):
+
+    @classmethod
+    def patch(cls, now=0, tick=TIME_DELTA):
+        if not MOCK_TIME:
+            return lambda f: f
+        self = cls(now, tick)
+        return mock.patch.multiple('time', time=self.time, sleep=self.sleep)
+
+    def __init__(self, now, tick):
+        self.now = now
+        self.tick = tick
+
+    def time(self):
+        # add some minimum (virtual) delay between calls to time()
+        self.sleep(self.tick)
+        return self.now
+
+    def sleep(self, n):
+        self.now += n
 
 
 class RedisTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # try to connect to a random Redis database (starting from 4) and
-        # use/connect it when no keys are in there.
         for dbnum in range(16):
             test_conn = redis.StrictRedis(db=dbnum)
             cursor, results = test_conn.scan(0)
-            if cursor == 0 and not results: # empty
+            if cursor == 0 and not results:  # empty
                 cls.test_conn = test_conn
                 return
         assert False, 'No empty Redis database found to run tests in'
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.test_conn.flushdb()
 
     def setUp(self):
         self.test_conn.flushdb()
@@ -35,6 +65,19 @@ class RedRobinTestCase(RedisTestCase):
         if throttled_items:
             rr.update_many(throttled_items)
         return rr
+
+    def assertAlmostEqualTime(self, t1, t2):
+        # give an order of magnitude slack compared to TIME_DELTA
+        self.assertAlmostEqual(t1, t2, delta=10 * TIME_DELTA)
+
+    @contextmanager
+    def assertAlmostEqualDuration(self, duration):
+        start = time.time()
+        try:
+            yield
+        finally:
+            end = time.time()
+            self.assertAlmostEqualTime(duration, end - start)
 
     def assertQueuesThrottles(self, round_robin, expected_queues, expected_throttled_items):
         queue = self.test_conn.zrange(round_robin._items_key, 0, -1)
@@ -109,74 +152,102 @@ class RedRobinTestCase(RedisTestCase):
         rr.clear()
         self.assertQueuesThrottles(rr, [], {})
 
-    def test_next(self):
+    def test_next_unthrottled(self):
         rr = self.RoundRobin(['foo', 'bar', 'baz'])
-        self.assertEqual(rr.next(), 'bar')
-        self.assertEqual(rr.next(), 'baz')
-        self.assertEqual(rr.next(), 'foo')
-        self.assertEqual(rr.next(), 'bar')
-        self.assertEqual(rr.next(), 'baz')
-        self.assertEqual(rr.next(), 'foo')
+        for item in islice(cycle(['bar', 'baz', 'foo']), 100):
+            self.assertEqual(rr.next(), item)
 
-    def test_next_wait(self):
-        throttle = 0.1
+    @MockTime.patch()
+    def test_next_throttled(self):
+        throttle = 1
         rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
-        self.assertEqual(rr.next(), 'bar')
-        self.assertEqual(rr.next(), 'baz')
-        self.assertEqual(rr.next(), 'foo')
-        self.assertEqual(rr.next(), 'bar')
-        self.assertEqual(rr.next(), 'baz')
-        self.assertEqual(rr.next(), 'foo')
 
-    def test_next_no_wait(self):
-        throttle = 0.1
-        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
-        self.assertEqual(rr.next(wait=False), 'bar')
-        self.assertEqual(rr.next(wait=False), 'baz')
-        self.assertEqual(rr.next(wait=False), 'foo')
+        # unthrottled
+        first_throttled_until = None
+        for item in 'bar', 'baz', 'foo':
+            with self.assertAlmostEqualDuration(TIME_DELTA):
+                self.assertEqual(rr.next(), item)
+                if first_throttled_until is None:
+                    first_throttled_until = time.time() + throttle
+
         # throttled
-        self.assertEqual(rr.next(wait=False), None)
-        time.sleep(throttle)
-        self.assertEqual(rr.next(wait=False), 'bar')
-        self.assertEqual(rr.next(wait=False), 'baz')
-        self.assertEqual(rr.next(wait=False), 'foo')
+        with self.assertAlmostEqualDuration(first_throttled_until - time.time()):
+            self.assertEqual(rr.next(), 'bar')
 
+        # unthrottled
+        for item in 'baz', 'foo':
+            with self.assertAlmostEqualDuration(TIME_DELTA):
+                self.assertEqual(rr.next(), item)
+
+    @MockTime.patch()
+    def test_next_throttled_no_wait(self):
+        throttle = 1
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
+
+        # unthrottled
+        for item in 'bar', 'baz', 'foo':
+            with self.assertAlmostEqualDuration(TIME_DELTA):
+                self.assertEqual(rr.next(wait=False), item)
+
+        # throttled
+        for _ in xrange(10):
+            with self.assertAlmostEqualDuration(TIME_DELTA):
+                self.assertIsNone(rr.next(wait=False))
+
+        time.sleep(throttle)
+        # unthrottled
+        for item in 'bar', 'baz', 'foo':
+            with self.assertAlmostEqualDuration(TIME_DELTA):
+                self.assertEqual(rr.next(wait=False), item)
+
+    @MockTime.patch()
     def test_is_throttled(self):
-        throttle = 0.1
-        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
-        self.assertFalse(rr.is_throttled())
+        throttle = 1
+        items = ['foo', 'bar', 'baz']
+        rr = self.RoundRobin(items, default_throttle=throttle)
 
-        rr.next(wait=False)
-        self.assertFalse(rr.is_throttled())
+        # unthrottled
+        for _ in items:
+            self.assertFalse(rr.is_throttled())
+            rr.next()
 
-        rr.next(wait=False)
-        self.assertFalse(rr.is_throttled())
-
-        rr.next(wait=False)
-        self.assertTrue(rr.is_throttled())
+        # throttled
+        for _ in xrange(10):
+            self.assertTrue(rr.is_throttled())
 
         time.sleep(throttle)
-        self.assertFalse(rr.is_throttled())
+        # unthrottled
+        for _ in items:
+            self.assertFalse(rr.is_throttled())
+            rr.next()
 
+    @MockTime.patch()
     def test_throttled_until(self):
-        throttle = 0.1
-        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
-        self.assertIsNone(rr.throttled_until())
+        throttle = 1
+        items = ['foo', 'bar', 'baz']
+        rr = self.RoundRobin(items, default_throttle=throttle)
 
-        rr.next(wait=False)
-        self.assertIsNone(rr.throttled_until())
+        # unthrottled
+        first_throttled_until = None
+        for _ in items:
+            self.assertIsNone(rr.throttled_until())
+            rr.next()
+            if first_throttled_until is None:
+                first_throttled_until = time.time() + throttle
 
-        rr.next(wait=False)
-        self.assertIsNone(rr.throttled_until())
-
-        rr.next(wait=False)
-        self.assertGreater(rr.throttled_until(), time.time())
+        # throttled
+        for _ in xrange(10):
+            self.assertAlmostEqualTime(rr.throttled_until(), first_throttled_until)
 
         time.sleep(throttle)
-        self.assertIsNone(rr.throttled_until())
+        # unthrottled
+        for _ in items:
+            self.assertIsNone(rr.throttled_until())
+            rr.next()
 
+    @MockTime.patch()
     def test_iter(self):
-        rr = self.RoundRobin(['foo', 'bar', 'baz'])
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=1)
         self.assertEqual(list(islice(rr, 5)), ['bar', 'baz', 'foo', 'bar', 'baz'])
 
     def test_empty_next_iter(self):

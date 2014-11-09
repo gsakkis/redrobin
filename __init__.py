@@ -1,6 +1,6 @@
 from collections import Mapping
 from contextlib import contextmanager
-from time import time, sleep
+import time
 
 import redis
 
@@ -58,7 +58,7 @@ class RoundRobin(object):
                 pipe.hset(self._throttles_key, item, throttle)
                 # don't update the current deadline of existing items
                 if not item_exists:
-                    pipe.zadd(self._items_key, time(), item)
+                    pipe.zadd(self._items_key, time.time(), item)
 
     def update_many(self, throttled_items):
         if not isinstance(throttled_items, Mapping):
@@ -81,7 +81,7 @@ class RoundRobin(object):
                 pipe.hmset(self._throttles_key, throttled_to_update)
                 # don't update the current deadline of existing items
                 if throttled_to_add:
-                    now = time()
+                    now = time.time()
                     items = {item: now for item in throttled_to_add.iterkeys()}
                     pipe.zadd(self._items_key, **items)
 
@@ -102,7 +102,7 @@ class RoundRobin(object):
         throttled_items = self._connection.zrange(self._items_key, 0, 0, withscores=True)
         if throttled_items:
             throttled_until = throttled_items[0][1]
-            if time() < throttled_until:
+            if time.time() < throttled_until:
                 return throttled_until
 
     def next(self, wait=True):
@@ -114,15 +114,15 @@ class RoundRobin(object):
             item, throttled_until = throttled_items[0]
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
-            now = time()
+            now = time.time()
             if now < throttled_until:
                 if not wait:
                     return
-                sleep(throttled_until - now)
+                time.sleep(throttled_until - now)
             # update the item's score to the new time it will stay throttled
             throttle = float(pipe.hget(self._throttles_key, item))
             pipe.multi()
-            pipe.zadd(self._items_key, time() + throttle, item)
+            pipe.zadd(self._items_key, time.time() + throttle, item)
             return item
 
     def __iter__(self):
