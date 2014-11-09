@@ -1,4 +1,5 @@
 from itertools import islice
+import time
 import unittest
 
 import redis
@@ -96,7 +97,7 @@ class RedRobinTestCase(RedisTestCase):
     def test_remove_missing(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.remove('xyz')
-        self.assertQueuesThrottles(rr, ['bar', 'baz', 'foo'], {'foo':3, 'bar': 4, 'baz': 2})
+        self.assertQueuesThrottles(rr, ['bar', 'baz', 'foo'], {'foo': 3, 'bar': 4, 'baz': 2})
 
     def test_remove_multiple(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
@@ -107,3 +108,34 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.clear()
         self.assertQueuesThrottles(rr, [], {})
+
+    def test_next(self):
+        rr = self.RoundRobin(['foo', 'bar', 'baz'])
+        self.assertEqual(rr.next(), 'bar')
+        self.assertEqual(rr.next(), 'baz')
+        self.assertEqual(rr.next(), 'foo')
+        self.assertEqual(rr.next(), 'bar')
+        self.assertEqual(rr.next(), 'baz')
+        self.assertEqual(rr.next(), 'foo')
+
+    def test_next_no_wait(self):
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=1)
+        self.assertEqual(rr.next(wait=False), 'bar')
+        self.assertEqual(rr.next(wait=False), 'baz')
+        self.assertEqual(rr.next(wait=False), 'foo')
+        # throttled
+        self.assertEqual(rr.next(wait=False), None)
+        time.sleep(1)
+        self.assertEqual(rr.next(wait=False), 'bar')
+        self.assertEqual(rr.next(wait=False), 'baz')
+        self.assertEqual(rr.next(wait=False), 'foo')
+
+    def test_iter(self):
+        rr = self.RoundRobin(['foo', 'bar', 'baz'])
+        self.assertEqual(list(islice(rr, 5)), ['bar', 'baz', 'foo', 'bar', 'baz'])
+
+    def test_empty_next_iter(self):
+        rr = self.RoundRobin()
+        self.assertRaises(StopIteration, rr.next)
+        self.assertEqual(list(rr), [])
+

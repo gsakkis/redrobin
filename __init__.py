@@ -1,6 +1,6 @@
-from contextlib import contextmanager
-from time import time
 from collections import Mapping
+from contextlib import contextmanager
+from time import time, sleep
 
 import redis
 
@@ -94,8 +94,25 @@ class RoundRobin(object):
     def clear(self):
         self._connection.delete(self._throttles_key, self._items_key)
 
-    def next(self):
-        raise NotImplementedError
+    def next(self, wait=True):
+        with self._connection.transaction(self._items_key) as pipe:
+            # get the first (i.e. earliest available) item
+            throttled_items = pipe.zrange(self._items_key, 0, 0, withscores=True)
+            if not throttled_items:
+                raise StopIteration
+            item, throttled_until = throttled_items[0]
+            # if it's throttled, sleep until it becomes unthrottled or return
+            # if not waiting
+            now = time()
+            if now < throttled_until:
+                if not wait:
+                    return
+                sleep(throttled_until - now)
+            # update the item's score to the new time it will stay throttled
+            throttle = float(pipe.hget(self._throttles_key, item))
+            pipe.multi()
+            pipe.zadd(self._items_key, now + throttle, item)
+            return item
 
     def __iter__(self):
         return self
