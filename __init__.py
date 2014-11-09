@@ -38,7 +38,7 @@ class RoundRobin(object):
     # hash of {item: throttle}
     redis_throttles_key_format = 'redrobin:throttles:{name}'
 
-    def __init__(self, connection=None, default_throttle=0, name='default'):
+    def __init__(self, connection=None, default_throttle=0.0, name='default'):
         if default_throttle < 0:
             raise ValueError("default_throttle must be a positive number")
         if connection is None:
@@ -94,6 +94,17 @@ class RoundRobin(object):
     def clear(self):
         self._connection.delete(self._throttles_key, self._items_key)
 
+    def is_throttled(self):
+        return self.throttled_until() is not None
+
+    def throttled_until(self):
+        # get the first (i.e. earliest available) item
+        throttled_items = self._connection.zrange(self._items_key, 0, 0, withscores=True)
+        if throttled_items:
+            throttled_until = throttled_items[0][1]
+            if time() < throttled_until:
+                return throttled_until
+
     def next(self, wait=True):
         with self._connection.transaction(self._items_key) as pipe:
             # get the first (i.e. earliest available) item
@@ -111,7 +122,7 @@ class RoundRobin(object):
             # update the item's score to the new time it will stay throttled
             throttle = float(pipe.hget(self._throttles_key, item))
             pipe.multi()
-            pipe.zadd(self._items_key, now + throttle, item)
+            pipe.zadd(self._items_key, time() + throttle, item)
             return item
 
     def __iter__(self):

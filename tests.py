@@ -29,7 +29,7 @@ class RedisTestCase(unittest.TestCase):
 
 class RedRobinTestCase(RedisTestCase):
 
-    def RoundRobin(self, throttled_items=None, default_throttle=0):
+    def RoundRobin(self, throttled_items=None, default_throttle=0.0):
         rr = redrobin.RoundRobin(default_throttle=default_throttle, name='test',
                                  connection=self.test_conn)
         if throttled_items:
@@ -118,17 +118,62 @@ class RedRobinTestCase(RedisTestCase):
         self.assertEqual(rr.next(), 'baz')
         self.assertEqual(rr.next(), 'foo')
 
+    def test_next_wait(self):
+        throttle = 0.1
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
+        self.assertEqual(rr.next(), 'bar')
+        self.assertEqual(rr.next(), 'baz')
+        self.assertEqual(rr.next(), 'foo')
+        self.assertEqual(rr.next(), 'bar')
+        self.assertEqual(rr.next(), 'baz')
+        self.assertEqual(rr.next(), 'foo')
+
     def test_next_no_wait(self):
-        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=1)
+        throttle = 0.1
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
         self.assertEqual(rr.next(wait=False), 'bar')
         self.assertEqual(rr.next(wait=False), 'baz')
         self.assertEqual(rr.next(wait=False), 'foo')
         # throttled
         self.assertEqual(rr.next(wait=False), None)
-        time.sleep(1)
+        time.sleep(throttle)
         self.assertEqual(rr.next(wait=False), 'bar')
         self.assertEqual(rr.next(wait=False), 'baz')
         self.assertEqual(rr.next(wait=False), 'foo')
+
+    def test_is_throttled(self):
+        throttle = 0.1
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
+        self.assertFalse(rr.is_throttled())
+
+        rr.next(wait=False)
+        self.assertFalse(rr.is_throttled())
+
+        rr.next(wait=False)
+        self.assertFalse(rr.is_throttled())
+
+        rr.next(wait=False)
+        self.assertTrue(rr.is_throttled())
+
+        time.sleep(throttle)
+        self.assertFalse(rr.is_throttled())
+
+    def test_throttled_until(self):
+        throttle = 0.1
+        rr = self.RoundRobin(['foo', 'bar', 'baz'], default_throttle=throttle)
+        self.assertIsNone(rr.throttled_until())
+
+        rr.next(wait=False)
+        self.assertIsNone(rr.throttled_until())
+
+        rr.next(wait=False)
+        self.assertIsNone(rr.throttled_until())
+
+        rr.next(wait=False)
+        self.assertGreater(rr.throttled_until(), time.time())
+
+        time.sleep(throttle)
+        self.assertIsNone(rr.throttled_until())
 
     def test_iter(self):
         rr = self.RoundRobin(['foo', 'bar', 'baz'])
@@ -138,4 +183,3 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.RoundRobin()
         self.assertRaises(StopIteration, rr.next)
         self.assertEqual(list(rr), [])
-
