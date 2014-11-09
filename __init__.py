@@ -1,34 +1,7 @@
 from collections import Mapping
-from contextlib import contextmanager
 import time
 
 import redis
-
-
-@apply
-def monkeypatch_transaction():
-    # Monkeypatch StrictRedis.transaction to allow it as context manager
-    #TODO: Make pull request to redis-py
-
-    @contextmanager
-    def transaction_context(self, *watches, **kwargs):
-        shard_hint = kwargs.pop('shard_hint', None)
-        with self.pipeline(True, shard_hint) as pipe:
-            while 1:
-                try:
-                    if watches:
-                        pipe.watch(*watches)
-                    yield pipe
-                    pipe.execute()
-                    break
-                except redis.WatchError:
-                    pass
-
-    orig_transaction = redis.StrictRedis.transaction
-    def transaction(self, *args, **kwargs):
-        method = orig_transaction if args and callable(args[0]) else transaction_context
-        return method(self, *args, **kwargs)
-    redis.StrictRedis.transaction = transaction
 
 
 class RoundRobin(object):
@@ -49,7 +22,7 @@ class RoundRobin(object):
         self._throttles_key = self.redis_throttles_key_format.format(name=name)
 
     def update_one(self, item, throttle=None):
-        with self._connection.transaction(self._throttles_key) as pipe:
+        def update(pipe, throttle=throttle):
             item_exists = pipe.hexists(self._throttles_key, item)
             if throttle is not None or not item_exists:
                 if throttle is None:
@@ -59,12 +32,13 @@ class RoundRobin(object):
                 # don't update the current deadline of existing items
                 if not item_exists:
                     pipe.zadd(self._items_key, time.time(), item)
+        self._connection.transaction(update, self._throttles_key)
 
     def update_many(self, throttled_items):
         if not isinstance(throttled_items, Mapping):
             throttled_items = dict.fromkeys(throttled_items)
 
-        with self._connection.transaction(self._throttles_key) as pipe:
+        def update(pipe):
             # split items into new and existing
             throttled_to_add, throttled_to_update = {}, {}
             current_items = set(pipe.hkeys(self._throttles_key))
@@ -84,6 +58,8 @@ class RoundRobin(object):
                     now = time.time()
                     items = {item: now for item in throttled_to_add.iterkeys()}
                     pipe.zadd(self._items_key, **items)
+
+        self._connection.transaction(update, self._throttles_key)
 
     def remove(self, *items):
         pipe = self._connection.pipeline()
@@ -106,7 +82,7 @@ class RoundRobin(object):
                 return throttled_until
 
     def next(self, wait=True):
-        with self._connection.transaction(self._items_key) as pipe:
+        def get_next(pipe):
             # get the first (i.e. earliest available) item
             throttled_items = pipe.zrange(self._items_key, 0, 0, withscores=True)
             if not throttled_items:
@@ -124,6 +100,8 @@ class RoundRobin(object):
             pipe.multi()
             pipe.zadd(self._items_key, time.time() + throttle, item)
             return item
+
+        return self._connection.transaction(get_next, self._items_key, value_from_callable=True)
 
     def __iter__(self):
         return self
