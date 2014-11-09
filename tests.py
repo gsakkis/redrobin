@@ -55,19 +55,19 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['foo'], {'foo': 5})
 
         rr.update_one('bar', 4)
-        self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 5, 'bar': 4})
+        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
         # neither queue nor throttle of foo is updated
         rr.update_one('foo')
-        self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 5, 'bar': 4})
+        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
         # queue not updated but throttle of foo is
         rr.update_one('foo', 3)
-        self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 3, 'bar': 4})
+        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
         # new item with default throttle(=0) added
         rr.update_one('xyz')
-        self.assertQueuesThrottles(rr, ['xyz', 'bar', 'foo'], {'foo': 3, 'bar': 4, 'xyz': 0})
+        self.assertQueuesThrottles(rr, ['foo', 'bar', 'xyz'], {'foo': 3, 'bar': 4, 'xyz': 0})
 
     def test_update_many(self):
         rr = self.RoundRobin()
@@ -76,27 +76,27 @@ class RedRobinTestCase(RedisTestCase):
 
         # baz and xyz are pushed, foo updates its throttle but stays in the same position
         rr.update_many(dict.fromkeys(['baz', 'foo', 'xyz'], 2))
-        self.assertQueuesThrottles(rr, ['baz', 'xyz', 'bar', 'foo'],
+        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
                                    {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
 
         rr.update_many({'uvw': 3, 'foo': 4})
-        self.assertQueuesThrottles(rr, ['baz', 'xyz', 'uvw', 'bar', 'foo'],
+        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw'],
                                    {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3})
 
         # default throttle(=0) used only when adding new items, not updating existing ones
         rr.update_many(['uvw', 'qa', 'bar'])
-        self.assertQueuesThrottles(rr, ['qa', 'baz', 'xyz', 'uvw', 'bar', 'foo'],
+        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw', 'qa'],
                                    {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3, 'qa': 0})
 
     def test_remove_existing(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.remove('foo')
-        self.assertQueuesThrottles(rr, ['baz', 'bar'], {'bar': 4, 'baz': 2})
+        self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
     def test_remove_missing(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.remove('xyz')
-        self.assertQueuesThrottles(rr, ['baz', 'foo', 'bar'], {'foo':3, 'bar': 4, 'baz': 2})
+        self.assertQueuesThrottles(rr, ['bar', 'baz', 'foo'], {'foo':3, 'bar': 4, 'baz': 2})
 
     def test_remove_multiple(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})

@@ -31,7 +31,7 @@ class RoundRobin(object):
                 pipe.hset(self._throttles_key, item, throttle)
                 # don't update the current deadline of existing items
                 if not item_exists:
-                    pipe.zadd(self._items_key, time() + throttle, item)
+                    pipe.zadd(self._items_key, time(), item)
         self._connection.transaction(update, self._throttles_key)
 
     def update_many(self, throttled_items):
@@ -56,8 +56,7 @@ class RoundRobin(object):
                 # don't update the current deadline of existing items
                 if throttled_to_add:
                     now = time()
-                    items = {item: now + throttle
-                             for item, throttle in throttled_to_add.iteritems()}
+                    items = {item: now for item in throttled_to_add.iterkeys()}
                     pipe.zadd(self._items_key, **items)
 
         self._connection.transaction(update, self._throttles_key)
