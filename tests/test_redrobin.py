@@ -81,6 +81,18 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw', 'qa'],
                                    {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3, 'qa': 0})
 
+    def test_update_throttles(self):
+        rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
+        rr.update_throttles(2.5)
+        self.assertEqual(rr.item_throttles(), {'foo': 2.5, 'bar': 2.5, 'baz': 2.5})
+        self.assertEqual(rr.default_throttle, 2.5)
+
+        rr.update_throttles(1.5, set_default=False)
+        self.assertEqual(rr.item_throttles(), {'foo': 1.5, 'bar': 1.5, 'baz': 1.5})
+        self.assertEqual(rr.default_throttle, 2.5)
+
+        self.assertRaises(ValueError, rr.update_throttles, None)
+
     def test_remove_existing(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.remove('foo')

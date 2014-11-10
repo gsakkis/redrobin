@@ -17,7 +17,7 @@ class RoundRobin(object):
         if connection is None:
             connection = redis.StrictRedis()
         self._connection = connection
-        self._default_throttle = default_throttle
+        self.default_throttle = default_throttle
         self._items_key = self.redis_items_key_format.format(name=name)
         self._throttles_key = self.redis_throttles_key_format.format(name=name)
 
@@ -26,7 +26,7 @@ class RoundRobin(object):
             item_exists = pipe.hexists(self._throttles_key, item)
             if throttle is not None or not item_exists:
                 if throttle is None:
-                    throttle = self._default_throttle
+                    throttle = self.default_throttle
                 pipe.multi()
                 pipe.hset(self._throttles_key, item, throttle)
                 # don't update the current deadline of existing items
@@ -44,7 +44,7 @@ class RoundRobin(object):
             current_items = set(pipe.hkeys(self._throttles_key))
             for item, throttle in throttled_items.iteritems():
                 if item not in current_items:
-                    throttled_to_add[item] = throttle if throttle is not None else self._default_throttle
+                    throttled_to_add[item] = throttle if throttle is not None else self.default_throttle
                 elif throttle is not None:  # don't update unless explicit throttle is passed
                     throttled_to_update[item] = throttle
 
@@ -60,6 +60,17 @@ class RoundRobin(object):
                     pipe.zadd(self._items_key, **items)
 
         self._connection.transaction(update, self._throttles_key)
+
+    def update_throttles(self, throttle, set_default=True):
+        if throttle < 0:
+            raise ValueError("throttle must be a positive number")
+        def update(pipe):
+            items = pipe.hkeys(self._throttles_key)
+            pipe.multi()
+            pipe.hmset(self._throttles_key, dict.fromkeys(items, throttle))
+        self._connection.transaction(update, self._throttles_key)
+        if set_default:
+            self.default_throttle = throttle
 
     def remove(self, *items):
         pipe = self._connection.pipeline()
