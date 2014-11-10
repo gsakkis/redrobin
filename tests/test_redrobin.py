@@ -8,8 +8,8 @@ from . import RedisTestCase, MockTime, TIME_DELTA
 
 class RedRobinTestCase(RedisTestCase):
 
-    def RoundRobin(self, throttled_items=None, default_throttle=0.0):
-        rr = redrobin.RoundRobin(default_throttle=default_throttle, name='test',
+    def RoundRobin(self, throttled_items=None, default_throttle=0.0, name='test'):
+        rr = redrobin.RoundRobin(default_throttle=default_throttle, name=name,
                                  connection=self.test_conn)
         if throttled_items:
             rr.update_many(throttled_items)
@@ -33,7 +33,7 @@ class RedRobinTestCase(RedisTestCase):
         throttled_items = self.test_conn.hgetall(round_robin._throttles_key)
         for item, throttle in throttled_items.iteritems():
             throttled_items[item] = float(throttle)
-        self.assertEqual(set(queue), set(throttled_items))
+        self.assertItemsEqual(queue, throttled_items.keys())
         self.assertEqual(queue, expected_queues)
         self.assertEqual(throttled_items, expected_throttled_items)
 
@@ -100,6 +100,26 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
         rr.clear()
         self.assertQueuesThrottles(rr, [], {})
+
+    def test_items(self):
+        rr = self.RoundRobin(['a', 'b', 'c'], name='no_throttle')
+        self.assertItemsEqual(rr.items(), ['a', 'b', 'c'])
+
+        rr = self.RoundRobin(['p', 'q', 'r'], name='same_throttle', default_throttle=1)
+        self.assertItemsEqual(rr.items(), ['p', 'q', 'r'])
+
+        rr = self.RoundRobin({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
+        self.assertItemsEqual(rr.items(), ['x', 'y', 'z'])
+
+    def test_item_throttles(self):
+        rr = self.RoundRobin(['a', 'b', 'c'], name='no_throttle')
+        self.assertEqual(rr.item_throttles(), {'a': 0, 'b': 0, 'c': 0})
+
+        rr = self.RoundRobin(['p', 'q', 'r'], name='same_throttle', default_throttle=1)
+        self.assertEqual(rr.item_throttles(), {'p': 1, 'q': 1, 'r': 1})
+
+        rr = self.RoundRobin({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
+        self.assertEqual(rr.item_throttles(), {'x': 3, 'y': 4, 'z': 2})
 
     def test_next_unthrottled(self):
         rr = self.RoundRobin(['foo', 'bar', 'baz'])

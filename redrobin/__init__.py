@@ -70,6 +70,13 @@ class RoundRobin(object):
     def clear(self):
         self._connection.delete(self._throttles_key, self._items_key)
 
+    def items(self):
+        return self._connection.hkeys(self._throttles_key)
+
+    def item_throttles(self):
+        return {item: float(throttle) for item, throttle in
+                self._connection.hgetall(self._throttles_key).iteritems()}
+
     def is_throttled(self):
         return self.throttled_until() is not None
 
