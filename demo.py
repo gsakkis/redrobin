@@ -87,5 +87,5 @@ if __name__ == '__main__':
         balancer = redrobin.RoundRobin(connection=connection, default_throttle=args.throttle)
 
     balancer.clear()
-    balancer.update_many(resources)
+    balancer.update(resources)
     spawn_processes(args.processes, args.threads, args.jobs)

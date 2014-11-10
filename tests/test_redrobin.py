@@ -12,7 +12,7 @@ class RedRobinTestCase(RedisTestCase):
         rr = redrobin.RoundRobin(default_throttle=default_throttle, name=name,
                                  connection=self.test_conn)
         if throttled_items:
-            rr.update_many(throttled_items)
+            rr.update(throttled_items)
         return rr
 
     def assertAlmostEqualTime(self, t1, t2):
@@ -42,42 +42,42 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, [], {})
         self.assertRaises(ValueError, self.RoundRobin, default_throttle=None)
 
-    def test_update_one(self):
+    def test_add(self):
         rr = self.RoundRobin()
-        rr.update_one('foo', 5)
+        rr.add('foo', 5)
         self.assertQueuesThrottles(rr, ['foo'], {'foo': 5})
 
-        rr.update_one('bar', 4)
+        rr.add('bar', 4)
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
         # neither queue nor throttle of foo is updated
-        rr.update_one('foo')
+        rr.add('foo')
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
         # queue not updated but throttle of foo is
-        rr.update_one('foo', 3)
+        rr.add('foo', 3)
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
         # new item with default throttle(=0) added
-        rr.update_one('xyz')
+        rr.add('xyz')
         self.assertQueuesThrottles(rr, ['foo', 'bar', 'xyz'], {'foo': 3, 'bar': 4, 'xyz': 0})
 
-    def test_update_many(self):
+    def test_update(self):
         rr = self.RoundRobin()
-        rr.update_many(dict.fromkeys(['foo', 'bar'], 5))
+        rr.update(dict.fromkeys(['foo', 'bar'], 5))
         self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 5, 'bar': 5})
 
         # baz and xyz are pushed, foo updates its throttle but stays in the same position
-        rr.update_many(dict.fromkeys(['baz', 'foo', 'xyz'], 2))
+        rr.update(dict.fromkeys(['baz', 'foo', 'xyz'], 2))
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
                                    {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
 
-        rr.update_many({'uvw': 3, 'foo': 4})
+        rr.update({'uvw': 3, 'foo': 4})
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw'],
                                    {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3})
 
         # default throttle(=0) used only when adding new items, not updating existing ones
-        rr.update_many(['uvw', 'qa', 'bar'])
+        rr.update(['uvw', 'qa', 'bar'])
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw', 'qa'],
                                    {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3, 'qa': 0})
 

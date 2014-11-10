@@ -21,7 +21,7 @@ class RoundRobin(object):
         self._items_key = self.redis_items_key_format.format(name=name)
         self._throttles_key = self.redis_throttles_key_format.format(name=name)
 
-    def update_one(self, item, throttle=None):
+    def add(self, item, throttle=None):
         def update(pipe, throttle=throttle):
             item_exists = pipe.hexists(self._throttles_key, item)
             if throttle is not None or not item_exists:
@@ -34,7 +34,7 @@ class RoundRobin(object):
                     pipe.zadd(self._items_key, time.time(), item)
         self._connection.transaction(update, self._throttles_key)
 
-    def update_many(self, throttled_items):
+    def update(self, throttled_items):
         if not isinstance(throttled_items, Mapping):
             throttled_items = dict.fromkeys(throttled_items)
 
