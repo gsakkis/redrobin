@@ -40,7 +40,8 @@ class RedRobinTestCase(RedisTestCase):
     def test_init(self):
         rr = self.RoundRobin()
         self.assertQueuesThrottles(rr, [], {})
-        self.assertRaises(ValueError, self.RoundRobin, default_throttle=None)
+        for throttle in None, -1, '1':
+            self.assertRaises(ValueError, self.RoundRobin, default_throttle=throttle)
 
     def test_add(self):
         rr = self.RoundRobin()
@@ -62,6 +63,10 @@ class RedRobinTestCase(RedisTestCase):
         rr.add('xyz')
         self.assertQueuesThrottles(rr, ['foo', 'bar', 'xyz'], {'foo': 3, 'bar': 4, 'xyz': 0})
 
+        # invalid throttle
+        for throttle in -1, '1':
+            self.assertRaises(ValueError, rr.add, 'foo', throttle)
+
     def test_update(self):
         rr = self.RoundRobin()
         rr.update(dict.fromkeys(['foo', 'bar'], 5))
@@ -72,14 +77,19 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
                                    {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
 
-        rr.update({'uvw': 3, 'foo': 4})
+        # default throttle is used only for new items, not existing ones
+        rr.update({'uvw': None, 'foo': None})
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw'],
-                                   {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3})
+                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 0})
 
-        # default throttle(=0) used only when adding new items, not updating existing ones
+        # default throttle is used only for new items, not existing ones
         rr.update(['uvw', 'qa', 'bar'])
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw', 'qa'],
-                                   {'foo': 4, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 3, 'qa': 0})
+                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 0, 'qa': 0})
+
+        # invalid throttle
+        for throttle in -1, '1':
+            self.assertRaises(ValueError, rr.update, {'foo': throttle})
 
     def test_update_throttles(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})
@@ -91,7 +101,8 @@ class RedRobinTestCase(RedisTestCase):
         self.assertEqual(rr.item_throttles(), {'foo': 1.5, 'bar': 1.5, 'baz': 1.5})
         self.assertEqual(rr.default_throttle, 2.5)
 
-        self.assertRaises(ValueError, rr.update_throttles, None)
+        for throttle in None, -1, '1':
+            self.assertRaises(ValueError, rr.update_throttles, throttle)
 
     def test_remove_existing(self):
         rr = self.RoundRobin({'foo': 3, 'bar': 4, 'baz': 2})

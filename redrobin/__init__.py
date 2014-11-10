@@ -1,4 +1,5 @@
-from collections import Mapping
+import collections
+import numbers
 import time
 
 import redis
@@ -12,8 +13,7 @@ class RoundRobin(object):
     redis_throttles_key_format = 'redrobin:throttles:{name}'
 
     def __init__(self, connection=None, default_throttle=0.0, name='default'):
-        if default_throttle < 0:
-            raise ValueError("default_throttle must be a positive number")
+        self._validate_throttle(default_throttle)
         if connection is None:
             connection = redis.StrictRedis()
         self._connection = connection
@@ -22,6 +22,8 @@ class RoundRobin(object):
         self._throttles_key = self.redis_throttles_key_format.format(name=name)
 
     def add(self, item, throttle=None):
+        if throttle is not None:
+            self._validate_throttle(throttle)
         def update(pipe, throttle=throttle):
             item_exists = pipe.hexists(self._throttles_key, item)
             if throttle is not None or not item_exists:
@@ -35,8 +37,12 @@ class RoundRobin(object):
         self._connection.transaction(update, self._throttles_key)
 
     def update(self, throttled_items):
-        if not isinstance(throttled_items, Mapping):
+        if not isinstance(throttled_items, collections.Mapping):
             throttled_items = dict.fromkeys(throttled_items)
+
+        for throttle in throttled_items.itervalues():
+            if throttle is not None:
+                self._validate_throttle(throttle)
 
         def update(pipe):
             # split items into new and existing
@@ -62,8 +68,7 @@ class RoundRobin(object):
         self._connection.transaction(update, self._throttles_key)
 
     def update_throttles(self, throttle, set_default=True):
-        if throttle < 0:
-            raise ValueError("throttle must be a positive number")
+        self._validate_throttle(throttle)
         def update(pipe):
             items = pipe.hkeys(self._throttles_key)
             pipe.multi()
@@ -123,3 +128,9 @@ class RoundRobin(object):
 
     def __iter__(self):
         return self
+
+    @staticmethod
+    def _validate_throttle(throttle):
+        if not (isinstance(throttle, numbers.Number) and throttle >= 0):
+            raise ValueError("throttle must be a positive number ({!r} given)"
+                             .format(throttle))
