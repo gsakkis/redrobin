@@ -5,7 +5,7 @@ import time
 import redis
 
 
-class RoundRobin(object):
+class MultiThrottleBalancer(object):
 
     # sorted set of items sorte by availability time
     redis_items_key_format = 'redrobin:items:{name}'

@@ -13,7 +13,7 @@ import redrobin
 
 
 def worker(jobs):
-    balancer = redrobin.RoundRobin(connection=redis.StrictRedis(db=REDIS_DB))
+    balancer = redrobin.MultiThrottleBalancer(connection=redis.StrictRedis(db=REDIS_DB))
     for job in jobs:
         proxy = balancer.next(wait=False)
         if proxy is None:
@@ -82,9 +82,9 @@ if __name__ == '__main__':
         throttles = [0.3 + 0.1 * i for i in range(args.resources)]
         resources = dict(zip(resources, throttles))
         print "Resource throttles: {}".format(sorted(resources.items()))
-        balancer = redrobin.RoundRobin(connection=connection)
+        balancer = redrobin.MultiThrottleBalancer(connection=connection)
     else:
-        balancer = redrobin.RoundRobin(connection=connection, default_throttle=args.throttle)
+        balancer = redrobin.MultiThrottleBalancer(connection=connection, default_throttle=args.throttle)
 
     balancer.clear()
     balancer.update(resources)
