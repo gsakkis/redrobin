@@ -8,9 +8,8 @@ from . import RedisTestCase, MockTime, TIME_DELTA
 
 class RedRobinTestCase(RedisTestCase):
 
-    def get_balancer(self, throttled_items=None, default_throttle=0.0, name='test'):
-        rr = redrobin.MultiThrottleBalancer(default_throttle=default_throttle,
-                                            name=name, connection=self.test_conn)
+    def get_balancer(self, throttled_items=None, name='test'):
+        rr = redrobin.MultiThrottleBalancer(name=name, connection=self.test_conn)
         if throttled_items:
             rr.update(throttled_items)
         return rr
@@ -40,8 +39,6 @@ class RedRobinTestCase(RedisTestCase):
     def test_init(self):
         rr = self.get_balancer()
         self.assertQueuesThrottles(rr, [], {})
-        for throttle in None, -1, '1':
-            self.assertRaises(ValueError, self.get_balancer, default_throttle=throttle)
 
     def test_add(self):
         rr = self.get_balancer()
@@ -51,20 +48,12 @@ class RedRobinTestCase(RedisTestCase):
         rr.add('bar', 4)
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
-        # neither queue nor throttle of foo is updated
-        rr.add('foo')
-        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
-
         # queue not updated but throttle of foo is
         rr.add('foo', 3)
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
-        # new item with default throttle(=0) added
-        rr.add('xyz')
-        self.assertQueuesThrottles(rr, ['foo', 'bar', 'xyz'], {'foo': 3, 'bar': 4, 'xyz': 0})
-
         # invalid throttle
-        for throttle in -1, '1':
+        for throttle in -1, '1', None:
             self.assertRaises(ValueError, rr.add, 'foo', throttle)
 
     def test_update(self):
@@ -77,32 +66,9 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
                                    {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
 
-        # default throttle is used only for new items, not existing ones
-        rr.update({'uvw': None, 'foo': None})
-        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw'],
-                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 0})
-
-        # default throttle is used only for new items, not existing ones
-        rr.update(['uvw', 'qa', 'bar'])
-        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'uvw', 'qa'],
-                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2, 'uvw': 0, 'qa': 0})
-
         # invalid throttle
-        for throttle in -1, '1':
+        for throttle in -1, '1', None:
             self.assertRaises(ValueError, rr.update, {'foo': throttle})
-
-    def test_update_throttles(self):
-        rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.update_throttles(2.5)
-        self.assertEqual(rr.item_throttles(), {'foo': 2.5, 'bar': 2.5, 'baz': 2.5})
-        self.assertEqual(rr.default_throttle, 2.5)
-
-        rr.update_throttles(1.5, set_default=False)
-        self.assertEqual(rr.item_throttles(), {'foo': 1.5, 'bar': 1.5, 'baz': 1.5})
-        self.assertEqual(rr.default_throttle, 2.5)
-
-        for throttle in None, -1, '1':
-            self.assertRaises(ValueError, rr.update_throttles, throttle)
 
     def test_remove_existing(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
@@ -125,34 +91,22 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, [], {})
 
     def test_items(self):
-        rr = self.get_balancer(['a', 'b', 'c'], name='no_throttle')
-        self.assertItemsEqual(rr.items(), ['a', 'b', 'c'])
-
-        rr = self.get_balancer(['p', 'q', 'r'], name='same_throttle', default_throttle=1)
-        self.assertItemsEqual(rr.items(), ['p', 'q', 'r'])
-
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertItemsEqual(rr.items(), ['x', 'y', 'z'])
 
     def test_item_throttles(self):
-        rr = self.get_balancer(['a', 'b', 'c'], name='no_throttle')
-        self.assertEqual(rr.item_throttles(), {'a': 0, 'b': 0, 'c': 0})
-
-        rr = self.get_balancer(['p', 'q', 'r'], name='same_throttle', default_throttle=1)
-        self.assertEqual(rr.item_throttles(), {'p': 1, 'q': 1, 'r': 1})
-
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertEqual(rr.item_throttles(), {'x': 3, 'y': 4, 'z': 2})
 
     def test_next_unthrottled(self):
-        rr = self.get_balancer(['foo', 'bar', 'baz'])
+        rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))
         for item in islice(cycle(['bar', 'baz', 'foo']), 100):
             self.assertEqual(rr.next(), item)
 
     @MockTime.patch()
     def test_next_throttled(self):
         throttle = 1
-        rr = self.get_balancer(['foo', 'bar', 'baz'], default_throttle=throttle)
+        rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
         first_throttled_until = None
@@ -174,7 +128,7 @@ class RedRobinTestCase(RedisTestCase):
     @MockTime.patch()
     def test_next_throttled_no_wait(self):
         throttle = 1
-        rr = self.get_balancer(['foo', 'bar', 'baz'], default_throttle=throttle)
+        rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
         for item in 'bar', 'baz', 'foo':
@@ -196,7 +150,7 @@ class RedRobinTestCase(RedisTestCase):
     def test_is_throttled(self):
         throttle = 1
         items = ['foo', 'bar', 'baz']
-        rr = self.get_balancer(items, default_throttle=throttle)
+        rr = self.get_balancer(dict.fromkeys(items, throttle))
 
         # unthrottled
         for _ in items:
@@ -217,7 +171,7 @@ class RedRobinTestCase(RedisTestCase):
     def test_throttled_until(self):
         throttle = 1
         items = ['foo', 'bar', 'baz']
-        rr = self.get_balancer(items, default_throttle=throttle)
+        rr = self.get_balancer(dict.fromkeys(items, throttle))
 
         # unthrottled
         first_throttled_until = None
@@ -239,7 +193,7 @@ class RedRobinTestCase(RedisTestCase):
 
     @MockTime.patch()
     def test_iter(self):
-        rr = self.get_balancer(['foo', 'bar', 'baz'], default_throttle=1)
+        rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 1))
         self.assertEqual(list(islice(rr, 5)), ['bar', 'baz', 'foo', 'bar', 'baz'])
 
     def test_empty_next_iter(self):
