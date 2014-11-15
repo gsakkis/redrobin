@@ -23,7 +23,7 @@ setup(
     author="George Sakkis",
     author_email="george.sakkis@gmail.com",
     packages=find_packages(),
-    install_requires=["redis"],
+    install_requires=["redis", "redis-collections"],
     tests_require=["pytest-cache", "pytest-cov", "pytest", "mock"],
     cmdclass={"test": PyTest},
     keywords="roundrobin throttling redis",

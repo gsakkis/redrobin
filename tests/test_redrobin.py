@@ -28,10 +28,8 @@ class RedRobinTestCase(RedisTestCase):
             self.assertAlmostEqualTime(duration, end - start)
 
     def assertQueuesThrottles(self, round_robin, expected_queues, expected_throttled_keys):
-        queue = self.test_conn.zrange(round_robin._keys_key, 0, -1)
-        throttled_keys = self.test_conn.hgetall(round_robin._throttles_key)
-        for key, throttle in throttled_keys.iteritems():
-            throttled_keys[key] = float(throttle)
+        queue = self.test_conn.zrange(round_robin.queue_key, 0, -1)
+        throttled_keys = dict(round_robin.iteritems())
         self.assertItemsEqual(queue, throttled_keys.keys())
         self.assertEqual(queue, expected_queues)
         self.assertEqual(throttled_keys, expected_throttled_keys)
