@@ -63,8 +63,7 @@ class MultiThrottleBalancer(redis_collections.Dict):
     # @classmethod
     # def fromkeys(cls, seq, value=None, **kwargs):
 
-    # TODO: rename to discardmany
-    def remove(self, *keys):
+    def discard(self, *keys):
         pipe = self.redis.pipeline()
         pipe.hdel(self.key, *keys)
         pipe.zrem(self.queue_key, *keys)

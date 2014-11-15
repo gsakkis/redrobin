@@ -69,19 +69,19 @@ class RedRobinTestCase(RedisTestCase):
         for throttle in -1, '1', None:
             self.assertRaises(ValueError, rr.update, {'foo': throttle})
 
-    def test_remove_existing(self):
+    def test_discard_existing(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.remove('foo')
+        rr.discard('foo')
         self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
-    def test_remove_missing(self):
+    def test_discard_missing(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.remove('xyz')
+        rr.discard('xyz')
         self.assertQueuesThrottles(rr, ['bar', 'baz', 'foo'], {'foo': 3, 'bar': 4, 'baz': 2})
 
-    def test_remove_multiple(self):
+    def test_discard_multiple(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.remove('baz', 'xyz', 'bar')
+        rr.discard('baz', 'xyz', 'bar')
         self.assertQueuesThrottles(rr, ['foo'], {'foo': 3})
 
     def test_clear(self):
