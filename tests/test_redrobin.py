@@ -9,10 +9,8 @@ from . import RedisTestCase, MockTime, TIME_DELTA
 class RedRobinTestCase(RedisTestCase):
 
     def get_balancer(self, throttled_keys=None, name='test'):
-        rr = redrobin.MultiThrottleBalancer(name=name, connection=self.test_conn)
-        if throttled_keys:
-            rr.update(throttled_keys)
-        return rr
+        return redrobin.MultiThrottleBalancer(throttled_keys=throttled_keys,
+                                              name=name, connection=self.test_conn)
 
     def assertAlmostEqualTime(self, t1, t2):
         # give an order of magnitude slack compared to TIME_DELTA
@@ -37,6 +35,13 @@ class RedRobinTestCase(RedisTestCase):
     def test_init(self):
         rr = self.get_balancer()
         self.assertQueuesThrottles(rr, [], {})
+
+        rr = self.get_balancer({'foo': 3, 'bar': 4})
+        self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 3, 'bar': 4})
+
+        rr = self.get_balancer({'abc': 1, 'xyz': 2, 'foo': 4})
+        self.assertQueuesThrottles(rr, ['abc', 'foo', 'xyz'],
+                                   {'abc': 1, 'xyz': 2, 'foo': 4})
 
     def test_setitem(self):
         rr = self.get_balancer()

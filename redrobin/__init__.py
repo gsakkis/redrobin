@@ -12,11 +12,14 @@ class MultiThrottleBalancer(redis_collections.Dict):
     # hash of {key: throttle}
     redis_throttles_format = 'redrobin:throttles:{name}'
 
-    # TODO: initial data
-    def __init__(self, connection=None, name='default'):
+    def __init__(self, throttled_keys=None, connection=None, name='default'):
         self.queue_key = self.redis_keys_format.format(name=name)
         throttles_key = self.redis_throttles_format.format(name=name)
-        super(MultiThrottleBalancer, self).__init__(redis=connection,
+        if throttled_keys:
+            for throttle in throttled_keys.itervalues():
+                self._validate_throttle(throttle)
+        super(MultiThrottleBalancer, self).__init__(data=throttled_keys,
+                                                    redis=connection,
                                                     key=throttles_key,
                                                     pickler=marshal)
 
@@ -72,9 +75,6 @@ class MultiThrottleBalancer(redis_collections.Dict):
         pipe.zrem(self.queue_key, *keys)
         pipe.execute()
 
-    def clear(self):
-        self.redis.delete(self.key, self.queue_key)
-
     def throttled_until(self):
         # get the first (i.e. earliest available) key
         throttled_keys = self.redis.zrange(self.queue_key, 0, 0, withscores=True)
@@ -106,6 +106,23 @@ class MultiThrottleBalancer(redis_collections.Dict):
             return key
 
         return self.redis.transaction(next_trans, self.queue_key, value_from_callable=True)
+
+    def _clear(self, pipe=None):
+        pipe = pipe if pipe is not None else self.redis
+        pipe.delete(self.key, self.queue_key)
+
+    def _init_data(self, throttled_keys, pipe=None):
+        if throttled_keys is not None:
+            p = pipe if pipe is not None else self.redis.pipeline()
+            self._clear(p)
+            if throttled_keys:
+                self._update(throttled_keys, p)
+                now = time.time()
+                items = {key: now for key in throttled_keys.iterkeys()}
+                p.zadd(self.queue_key, **items)
+            if pipe is None:
+                # own pipe, execute it
+                p.execute()
 
     @staticmethod
     def _validate_throttle(throttle):
