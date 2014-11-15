@@ -60,6 +60,15 @@ class RedRobinTestCase(RedisTestCase):
             with self.assertRaises(ValueError):
                 rr['foo'] = throttle
 
+    def test_delitem(self):
+        rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
+        del rr['foo']
+        self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        with self.assertRaises(KeyError):
+            del rr['xyz']
+            self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
     def test_update(self):
         rr = self.get_balancer()
         rr.update(dict.fromkeys(['foo', 'bar'], 5))

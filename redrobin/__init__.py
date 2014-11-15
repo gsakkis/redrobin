@@ -46,8 +46,16 @@ class MultiThrottleBalancer(redis_collections.Dict):
                 self._update(throttled_keys, pipe)
                 pipe.execute()
 
+    def __delitem__(self, key):
+        with self.redis.pipeline() as pipe:
+            pipe.hexists(self.key, key)
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            exists, _, _ = pipe.execute()
+            if not exists:
+                raise KeyError(key)
+
     # TODO
-    # def __delitem__(self, key):
     # def pop(self, key, default=__marker):
     #def popitem(self):
     #def setdefault(self, key, default=None):
