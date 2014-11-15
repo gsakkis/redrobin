@@ -65,6 +65,17 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
                                    {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
 
+        # update from kwargs
+        rr.update(xyz=3, abc=4)
+        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'abc'],
+                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 3, 'abc': 4})
+
+        # update from both a dict and kwargs
+        rr.update({'bar': 2, 'mno': 8}, foo=1, ghi=7)
+        self.assertQueuesThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'abc', 'ghi', 'mno'],
+                                   {'foo': 1, 'bar': 2, 'baz': 2, 'xyz': 3,
+                                    'abc': 4, 'mno': 8, 'ghi': 7})
+
         # invalid throttle
         for throttle in -1, '1', None:
             self.assertRaises(ValueError, rr.update, {'foo': throttle})
@@ -106,7 +117,6 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer()
         self.assertRaises(StopIteration, rr.next)
         self.assertEqual(list(rr), [])
-
 
     def test_next_unthrottled(self):
         rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))

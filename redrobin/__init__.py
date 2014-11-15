@@ -23,7 +23,7 @@ class MultiThrottleBalancer(redis_collections.Dict):
     def __setitem__(self, key, throttle):
         self._validate_throttle(throttle)
 
-        def update(pipe, throttle=throttle):
+        def setitem_trans(pipe):
             key_exists = pipe.hexists(self.key, key)
             pipe.multi()
             pipe.hset(self.key, key, self._pickle(throttle))
@@ -31,29 +31,32 @@ class MultiThrottleBalancer(redis_collections.Dict):
             if not key_exists:
                 pipe.zadd(self.queue_key, time.time(), key)
 
-        self.redis.transaction(update, self.key)
+        self.redis.transaction(setitem_trans, self.key)
 
-    # TODO: change signature to def update(self, other=None, **kwargs):
-    def update(self, throttled_keys):
+    def update(self, *args, **kwargs):
+        throttled_keys = dict(*args, **kwargs)
         if not throttled_keys:
             return
+
         for throttle in throttled_keys.itervalues():
             self._validate_throttle(throttle)
 
-        def update(pipe):
+        def update_trans(pipe):
             current_keys = set(pipe.hkeys(self.key))
-            throttled_to_add = {key: throttle
-                                for key, throttle in throttled_keys.iteritems()
-                                if key not in current_keys}
+            to_add = {key: throttle
+                      for key, throttle in throttled_keys.iteritems()
+                      if key not in current_keys}
+
             pipe.multi()
             self._update(throttled_keys, pipe)
+
             # don't update the current deadline of existing keys
-            if throttled_to_add:
+            if to_add:
                 now = time.time()
-                items = {key: now for key in throttled_to_add.iterkeys()}
+                items = {key: now for key in to_add.iterkeys()}
                 pipe.zadd(self.queue_key, **items)
 
-        self.redis.transaction(update, self.key)
+        self.redis.transaction(update_trans, self.key)
 
     # TODO
     # def __delitem__(self, key):
@@ -81,11 +84,12 @@ class MultiThrottleBalancer(redis_collections.Dict):
                 return throttled_until
 
     def next(self, wait=True):
-        def get_next(pipe):
+        def next_trans(pipe):
             # get the first (i.e. earliest available) key
             throttled_keys = pipe.zrange(self.queue_key, 0, 0, withscores=True)
             if not throttled_keys:
                 raise StopIteration
+
             key, throttled_until = throttled_keys[0]
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
@@ -94,13 +98,14 @@ class MultiThrottleBalancer(redis_collections.Dict):
                 if not wait:
                     return
                 time.sleep(throttled_until - now)
+
             # update the key's score to the new time it will stay throttled
             throttle = self._unpickle(pipe.hget(self.key, key))
             pipe.multi()
             pipe.zadd(self.queue_key, time.time() + throttle, key)
             return key
 
-        return self.redis.transaction(get_next, self.queue_key, value_from_callable=True)
+        return self.redis.transaction(next_trans, self.queue_key, value_from_callable=True)
 
     @staticmethod
     def _validate_throttle(throttle):
