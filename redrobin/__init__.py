@@ -68,9 +68,6 @@ class MultiThrottleBalancer(object):
         return {key: float(throttle) for key, throttle in
                 self._connection.hgetall(self._throttles_key).iteritems()}
 
-    def is_throttled(self):
-        return self.throttled_until() is not None
-
     def throttled_until(self):
         # get the first (i.e. earliest available) key
         throttled_keys = self._connection.zrange(self._keys_key, 0, 0, withscores=True)

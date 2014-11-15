@@ -147,27 +147,6 @@ class RedRobinTestCase(RedisTestCase):
                 self.assertEqual(rr.next(wait=False), key)
 
     @MockTime.patch()
-    def test_is_throttled(self):
-        throttle = 1
-        keys = ['foo', 'bar', 'baz']
-        rr = self.get_balancer(dict.fromkeys(keys, throttle))
-
-        # unthrottled
-        for _ in keys:
-            self.assertFalse(rr.is_throttled())
-            rr.next()
-
-        # throttled
-        for _ in xrange(10):
-            self.assertTrue(rr.is_throttled())
-
-        time.sleep(throttle)
-        # unthrottled
-        for _ in keys:
-            self.assertFalse(rr.is_throttled())
-            rr.next()
-
-    @MockTime.patch()
     def test_throttled_until(self):
         throttle = 1
         keys = ['foo', 'bar', 'baz']
