@@ -72,10 +72,6 @@ class MultiThrottleBalancer(redis_collections.Dict):
     def clear(self):
         self.redis.delete(self.key, self.queue_key)
 
-    # TODO: drop
-    def key_throttles(self):
-        return dict(self.iteritems())
-
     def throttled_until(self):
         # get the first (i.e. earliest available) key
         throttled_keys = self.redis.zrange(self.queue_key, 0, 0, withscores=True)

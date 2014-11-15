@@ -98,9 +98,9 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer(dict.fromkeys(keys, 1))
         self.assertItemsEqual(list(rr), keys)
 
-    def test_key_throttles(self):
+    def test_key_iteritems(self):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
-        self.assertEqual(rr.key_throttles(), {'x': 3, 'y': 4, 'z': 2})
+        self.assertEqual(dict(rr.iteritems()), {'x': 3, 'y': 4, 'z': 2})
 
     def test_empty(self):
         rr = self.get_balancer()
