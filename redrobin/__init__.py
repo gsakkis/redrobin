@@ -20,8 +20,7 @@ class MultiThrottleBalancer(redis_collections.Dict):
                                                     key=throttles_key,
                                                     pickler=marshal)
 
-    # TODO: rename to __setitem__
-    def add(self, key, throttle):
+    def __setitem__(self, key, throttle):
         self._validate_throttle(throttle)
 
         def update(pipe, throttle=throttle):

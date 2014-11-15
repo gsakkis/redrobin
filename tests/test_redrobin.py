@@ -38,21 +38,22 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer()
         self.assertQueuesThrottles(rr, [], {})
 
-    def test_add(self):
+    def test_setitem(self):
         rr = self.get_balancer()
-        rr.add('foo', 5)
+        rr['foo'] = 5
         self.assertQueuesThrottles(rr, ['foo'], {'foo': 5})
 
-        rr.add('bar', 4)
+        rr['bar'] = 4
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
         # queue not updated but throttle of foo is
-        rr.add('foo', 3)
+        rr['foo'] = 3
         self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
         # invalid throttle
         for throttle in -1, '1', None:
-            self.assertRaises(ValueError, rr.add, 'foo', throttle)
+            with self.assertRaises(ValueError):
+                rr['foo'] = throttle
 
     def test_update(self):
         rr = self.get_balancer()
