@@ -2,7 +2,13 @@ import marshal
 import numbers
 import time
 
+import redis
 import redis_collections
+
+from .zaddnx import zaddnx
+
+# monkeypatch StrictRedis with a zaddnx method
+redis.StrictRedis.zaddnx = zaddnx
 
 
 class MultiThrottleBalancer(redis_collections.Dict):
@@ -25,41 +31,20 @@ class MultiThrottleBalancer(redis_collections.Dict):
 
     def __setitem__(self, key, throttle):
         self._validate_throttle(throttle)
-
-        def setitem_trans(pipe):
-            key_exists = pipe.hexists(self.key, key)
-            pipe.multi()
+        with self.redis.pipeline() as pipe:
             pipe.hset(self.key, key, self._pickle(throttle))
-            # don't update the current deadline of existing keys
-            if not key_exists:
-                pipe.zadd(self.queue_key, time.time(), key)
-
-        self.redis.transaction(setitem_trans, self.key)
+            # don't update the deadline if the key exists
+            pipe.zaddnx(self.queue_key, time.time(), key)
+            pipe.execute()
 
     def update(self, *args, **kwargs):
         throttled_keys = dict(*args, **kwargs)
-        if not throttled_keys:
-            return
-
-        for throttle in throttled_keys.itervalues():
-            self._validate_throttle(throttle)
-
-        def update_trans(pipe):
-            current_keys = set(pipe.hkeys(self.key))
-            to_add = {key: throttle
-                      for key, throttle in throttled_keys.iteritems()
-                      if key not in current_keys}
-
-            pipe.multi()
-            self._update(throttled_keys, pipe)
-
-            # don't update the current deadline of existing keys
-            if to_add:
-                now = time.time()
-                items = {key: now for key in to_add.iterkeys()}
-                pipe.zadd(self.queue_key, **items)
-
-        self.redis.transaction(update_trans, self.key)
+        if throttled_keys:
+            for throttle in throttled_keys.itervalues():
+                self._validate_throttle(throttle)
+            with self.redis.pipeline() as pipe:
+                self._update(throttled_keys, pipe)
+                pipe.execute()
 
     # TODO
     # def __delitem__(self, key):
@@ -70,10 +55,10 @@ class MultiThrottleBalancer(redis_collections.Dict):
     # def fromkeys(cls, seq, value=None, **kwargs):
 
     def discard(self, *keys):
-        pipe = self.redis.pipeline()
-        pipe.hdel(self.key, *keys)
-        pipe.zrem(self.queue_key, *keys)
-        pipe.execute()
+        with self.redis.pipeline() as pipe:
+            pipe.hdel(self.key, *keys)
+            pipe.zrem(self.queue_key, *keys)
+            pipe.execute()
 
     def throttled_until(self):
         # get the first (i.e. earliest available) key
@@ -111,18 +96,13 @@ class MultiThrottleBalancer(redis_collections.Dict):
         pipe = pipe if pipe is not None else self.redis
         pipe.delete(self.key, self.queue_key)
 
-    def _init_data(self, throttled_keys, pipe=None):
-        if throttled_keys is not None:
-            p = pipe if pipe is not None else self.redis.pipeline()
-            self._clear(p)
-            if throttled_keys:
-                self._update(throttled_keys, p)
-                now = time.time()
-                items = {key: now for key in throttled_keys.iterkeys()}
-                p.zadd(self.queue_key, **items)
-            if pipe is None:
-                # own pipe, execute it
-                p.execute()
+    def _update(self, throttled_keys, pipe=None):
+        pipe = pipe if pipe is not None else self.redis
+        super(MultiThrottleBalancer, self)._update(throttled_keys, pipe)
+        now = time.time()
+        items = {key: now for key in throttled_keys.iterkeys()}
+        # don't update the deadlines of existing keys
+        pipe.zaddnx(self.queue_key, **items)
 
     @staticmethod
     def _validate_throttle(throttle):
