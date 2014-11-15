@@ -108,10 +108,6 @@ class MultiThrottleBalancer(redis_collections.Dict):
 
         return self.redis.transaction(get_next, self.queue_key, value_from_callable=True)
 
-    # TODO: drop
-    def __iter__(self):
-        return self
-
     @staticmethod
     def _validate_throttle(throttle):
         if not (isinstance(throttle, numbers.Number) and throttle >= 0):

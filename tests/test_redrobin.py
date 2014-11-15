@@ -92,9 +92,20 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertItemsEqual(rr.keys(), ['x', 'y', 'z'])
 
+    def test_iter(self):
+        keys = ['foo', 'bar', 'baz']
+        rr = self.get_balancer(dict.fromkeys(keys, 1))
+        self.assertItemsEqual(list(rr), keys)
+
     def test_key_throttles(self):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertEqual(rr.key_throttles(), {'x': 3, 'y': 4, 'z': 2})
+
+    def test_empty(self):
+        rr = self.get_balancer()
+        self.assertRaises(StopIteration, rr.next)
+        self.assertEqual(list(rr), [])
+
 
     def test_next_unthrottled(self):
         rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))
@@ -167,13 +178,3 @@ class RedRobinTestCase(RedisTestCase):
         for _ in keys:
             self.assertIsNone(rr.throttled_until())
             rr.next()
-
-    @MockTime.patch()
-    def test_iter(self):
-        rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 1))
-        self.assertEqual(list(islice(rr, 5)), ['bar', 'baz', 'foo', 'bar', 'baz'])
-
-    def test_empty_next_iter(self):
-        rr = self.get_balancer()
-        self.assertRaises(StopIteration, rr.next)
-        self.assertEqual(list(rr), [])
