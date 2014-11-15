@@ -81,11 +81,11 @@ if __name__ == '__main__':
     if args.throttle is None:
         throttles = [0.3 + 0.1 * i for i in range(args.resources)]
         resources = dict(zip(resources, throttles))
-        print "Resource throttles: {}".format(sorted(resources.items()))
-        balancer = redrobin.MultiThrottleBalancer(connection=connection)
     else:
-        balancer = redrobin.MultiThrottleBalancer(connection=connection, default_throttle=args.throttle)
+        resources = dict.fromkeys(resources, args.throttle)
+    print "Resource throttles: {}".format(sorted(resources.items()))
 
+    balancer = redrobin.MultiThrottleBalancer(connection=connection)
     balancer.clear()
     balancer.update(resources)
     spawn_processes(args.processes, args.threads, args.jobs)

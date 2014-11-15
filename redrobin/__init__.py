@@ -6,86 +6,86 @@ import redis
 
 class MultiThrottleBalancer(object):
 
-    # sorted set of items sorted by availability time
-    redis_items_key_format = 'redrobin:items:{name}'
-    # hash of {item: throttle}
-    redis_throttles_key_format = 'redrobin:throttles:{name}'
+    # set of keys sorted by availability time
+    redis_keys_format = 'redrobin:keys:{name}'
+    # hash of {key: throttle}
+    redis_throttles_format = 'redrobin:throttles:{name}'
 
     def __init__(self, connection=None, name='default'):
         if connection is None:
             connection = redis.StrictRedis()
         self._connection = connection
-        self._items_key = self.redis_items_key_format.format(name=name)
-        self._throttles_key = self.redis_throttles_key_format.format(name=name)
+        self._keys_key = self.redis_keys_format.format(name=name)
+        self._throttles_key = self.redis_throttles_format.format(name=name)
 
-    def add(self, item, throttle):
+    def add(self, key, throttle):
         self._validate_throttle(throttle)
 
         def update(pipe, throttle=throttle):
-            item_exists = pipe.hexists(self._throttles_key, item)
+            key_exists = pipe.hexists(self._throttles_key, key)
             pipe.multi()
-            pipe.hset(self._throttles_key, item, throttle)
-            # don't update the current deadline of existing items
-            if not item_exists:
-                pipe.zadd(self._items_key, time.time(), item)
+            pipe.hset(self._throttles_key, key, throttle)
+            # don't update the current deadline of existing keys
+            if not key_exists:
+                pipe.zadd(self._keys_key, time.time(), key)
 
         self._connection.transaction(update, self._throttles_key)
 
-    def update(self, throttled_items):
-        if not throttled_items:
+    def update(self, throttled_keys):
+        if not throttled_keys:
             return
-        for throttle in throttled_items.itervalues():
+        for throttle in throttled_keys.itervalues():
             self._validate_throttle(throttle)
 
         def update(pipe):
-            current_items = set(pipe.hkeys(self._throttles_key))
-            throttled_to_add = {item: throttle
-                                for item, throttle in throttled_items.iteritems()
-                                if item not in current_items}
+            current_keys = set(pipe.hkeys(self._throttles_key))
+            throttled_to_add = {key: throttle
+                                for key, throttle in throttled_keys.iteritems()
+                                if key not in current_keys}
             pipe.multi()
-            pipe.hmset(self._throttles_key, throttled_items)
-            # don't update the current deadline of existing items
+            pipe.hmset(self._throttles_key, throttled_keys)
+            # don't update the current deadline of existing keys
             if throttled_to_add:
                 now = time.time()
-                items = {item: now for item in throttled_to_add.iterkeys()}
-                pipe.zadd(self._items_key, **items)
+                keys = {key: now for key in throttled_to_add.iterkeys()}
+                pipe.zadd(self._keys_key, **keys)
 
         self._connection.transaction(update, self._throttles_key)
 
-    def remove(self, *items):
+    def remove(self, *keys):
         pipe = self._connection.pipeline()
-        pipe.hdel(self._throttles_key, *items)
-        pipe.zrem(self._items_key, *items)
+        pipe.hdel(self._throttles_key, *keys)
+        pipe.zrem(self._keys_key, *keys)
         pipe.execute()
 
     def clear(self):
-        self._connection.delete(self._throttles_key, self._items_key)
+        self._connection.delete(self._throttles_key, self._keys_key)
 
-    def items(self):
+    def keys(self):
         return self._connection.hkeys(self._throttles_key)
 
-    def item_throttles(self):
-        return {item: float(throttle) for item, throttle in
+    def key_throttles(self):
+        return {key: float(throttle) for key, throttle in
                 self._connection.hgetall(self._throttles_key).iteritems()}
 
     def is_throttled(self):
         return self.throttled_until() is not None
 
     def throttled_until(self):
-        # get the first (i.e. earliest available) item
-        throttled_items = self._connection.zrange(self._items_key, 0, 0, withscores=True)
-        if throttled_items:
-            throttled_until = throttled_items[0][1]
+        # get the first (i.e. earliest available) key
+        throttled_keys = self._connection.zrange(self._keys_key, 0, 0, withscores=True)
+        if throttled_keys:
+            throttled_until = throttled_keys[0][1]
             if time.time() < throttled_until:
                 return throttled_until
 
     def next(self, wait=True):
         def get_next(pipe):
-            # get the first (i.e. earliest available) item
-            throttled_items = pipe.zrange(self._items_key, 0, 0, withscores=True)
-            if not throttled_items:
+            # get the first (i.e. earliest available) key
+            throttled_keys = pipe.zrange(self._keys_key, 0, 0, withscores=True)
+            if not throttled_keys:
                 raise StopIteration
-            item, throttled_until = throttled_items[0]
+            key, throttled_until = throttled_keys[0]
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
             now = time.time()
@@ -93,13 +93,13 @@ class MultiThrottleBalancer(object):
                 if not wait:
                     return
                 time.sleep(throttled_until - now)
-            # update the item's score to the new time it will stay throttled
-            throttle = float(pipe.hget(self._throttles_key, item))
+            # update the key's score to the new time it will stay throttled
+            throttle = float(pipe.hget(self._throttles_key, key))
             pipe.multi()
-            pipe.zadd(self._items_key, time.time() + throttle, item)
-            return item
+            pipe.zadd(self._keys_key, time.time() + throttle, key)
+            return key
 
-        return self._connection.transaction(get_next, self._items_key, value_from_callable=True)
+        return self._connection.transaction(get_next, self._keys_key, value_from_callable=True)
 
     def __iter__(self):
         return self

@@ -8,10 +8,10 @@ from . import RedisTestCase, MockTime, TIME_DELTA
 
 class RedRobinTestCase(RedisTestCase):
 
-    def get_balancer(self, throttled_items=None, name='test'):
+    def get_balancer(self, throttled_keys=None, name='test'):
         rr = redrobin.MultiThrottleBalancer(name=name, connection=self.test_conn)
-        if throttled_items:
-            rr.update(throttled_items)
+        if throttled_keys:
+            rr.update(throttled_keys)
         return rr
 
     def assertAlmostEqualTime(self, t1, t2):
@@ -27,14 +27,14 @@ class RedRobinTestCase(RedisTestCase):
             end = time.time()
             self.assertAlmostEqualTime(duration, end - start)
 
-    def assertQueuesThrottles(self, round_robin, expected_queues, expected_throttled_items):
-        queue = self.test_conn.zrange(round_robin._items_key, 0, -1)
-        throttled_items = self.test_conn.hgetall(round_robin._throttles_key)
-        for item, throttle in throttled_items.iteritems():
-            throttled_items[item] = float(throttle)
-        self.assertItemsEqual(queue, throttled_items.keys())
+    def assertQueuesThrottles(self, round_robin, expected_queues, expected_throttled_keys):
+        queue = self.test_conn.zrange(round_robin._keys_key, 0, -1)
+        throttled_keys = self.test_conn.hgetall(round_robin._throttles_key)
+        for key, throttle in throttled_keys.iteritems():
+            throttled_keys[key] = float(throttle)
+        self.assertItemsEqual(queue, throttled_keys.keys())
         self.assertEqual(queue, expected_queues)
-        self.assertEqual(throttled_items, expected_throttled_items)
+        self.assertEqual(throttled_keys, expected_throttled_keys)
 
     def test_init(self):
         rr = self.get_balancer()
@@ -90,18 +90,18 @@ class RedRobinTestCase(RedisTestCase):
         rr.clear()
         self.assertQueuesThrottles(rr, [], {})
 
-    def test_items(self):
+    def test_keys(self):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
-        self.assertItemsEqual(rr.items(), ['x', 'y', 'z'])
+        self.assertItemsEqual(rr.keys(), ['x', 'y', 'z'])
 
-    def test_item_throttles(self):
+    def test_key_throttles(self):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
-        self.assertEqual(rr.item_throttles(), {'x': 3, 'y': 4, 'z': 2})
+        self.assertEqual(rr.key_throttles(), {'x': 3, 'y': 4, 'z': 2})
 
     def test_next_unthrottled(self):
         rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))
-        for item in islice(cycle(['bar', 'baz', 'foo']), 100):
-            self.assertEqual(rr.next(), item)
+        for key in islice(cycle(['bar', 'baz', 'foo']), 100):
+            self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
     def test_next_throttled(self):
@@ -110,9 +110,9 @@ class RedRobinTestCase(RedisTestCase):
 
         # unthrottled
         first_throttled_until = None
-        for item in 'bar', 'baz', 'foo':
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostEqualDuration(TIME_DELTA):
-                self.assertEqual(rr.next(), item)
+                self.assertEqual(rr.next(), key)
                 if first_throttled_until is None:
                     first_throttled_until = time.time() + throttle
 
@@ -121,9 +121,9 @@ class RedRobinTestCase(RedisTestCase):
             self.assertEqual(rr.next(), 'bar')
 
         # unthrottled
-        for item in 'baz', 'foo':
+        for key in 'baz', 'foo':
             with self.assertAlmostEqualDuration(TIME_DELTA):
-                self.assertEqual(rr.next(), item)
+                self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
     def test_next_throttled_no_wait(self):
@@ -131,9 +131,9 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
-        for item in 'bar', 'baz', 'foo':
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostEqualDuration(TIME_DELTA):
-                self.assertEqual(rr.next(wait=False), item)
+                self.assertEqual(rr.next(wait=False), key)
 
         # throttled
         for _ in xrange(10):
@@ -142,18 +142,18 @@ class RedRobinTestCase(RedisTestCase):
 
         time.sleep(throttle)
         # unthrottled
-        for item in 'bar', 'baz', 'foo':
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostEqualDuration(TIME_DELTA):
-                self.assertEqual(rr.next(wait=False), item)
+                self.assertEqual(rr.next(wait=False), key)
 
     @MockTime.patch()
     def test_is_throttled(self):
         throttle = 1
-        items = ['foo', 'bar', 'baz']
-        rr = self.get_balancer(dict.fromkeys(items, throttle))
+        keys = ['foo', 'bar', 'baz']
+        rr = self.get_balancer(dict.fromkeys(keys, throttle))
 
         # unthrottled
-        for _ in items:
+        for _ in keys:
             self.assertFalse(rr.is_throttled())
             rr.next()
 
@@ -163,19 +163,19 @@ class RedRobinTestCase(RedisTestCase):
 
         time.sleep(throttle)
         # unthrottled
-        for _ in items:
+        for _ in keys:
             self.assertFalse(rr.is_throttled())
             rr.next()
 
     @MockTime.patch()
     def test_throttled_until(self):
         throttle = 1
-        items = ['foo', 'bar', 'baz']
-        rr = self.get_balancer(dict.fromkeys(items, throttle))
+        keys = ['foo', 'bar', 'baz']
+        rr = self.get_balancer(dict.fromkeys(keys, throttle))
 
         # unthrottled
         first_throttled_until = None
-        for _ in items:
+        for _ in keys:
             self.assertIsNone(rr.throttled_until())
             rr.next()
             if first_throttled_until is None:
@@ -187,7 +187,7 @@ class RedRobinTestCase(RedisTestCase):
 
         time.sleep(throttle)
         # unthrottled
-        for _ in items:
+        for _ in keys:
             self.assertIsNone(rr.throttled_until())
             rr.next()
 
