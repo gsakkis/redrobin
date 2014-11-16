@@ -8,7 +8,7 @@ from .utils import validate_throttle
 class ThrottlingBalancer(redis_collections.RedisCollection):
 
     # list of keys sorted by availability time
-    redis_queue_format = 'redrobin:{name}:items'
+    redis_queue_format = 'redrobin:{name}:throttled_items'
 
     def __init__(self, throttle, keys=None, connection=None, name='default'):
         self._throttle = None

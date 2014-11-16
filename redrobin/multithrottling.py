@@ -9,7 +9,7 @@ from .utils import validate_throttle
 class MultiThrottleBalancer(redis_collections.Dict):
 
     # set of keys sorted by availability time
-    redis_queue_format = 'redrobin:{name}:keys'
+    redis_queue_format = 'redrobin:{name}:throttled_keys'
     # hash of {key: throttle}
     redis_throttles_format = 'redrobin:{name}:throttles'
 
