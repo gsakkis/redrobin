@@ -105,17 +105,20 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
     #     for throttle in -1, '1', None:
     #         self.assertRaises(ValueError, rr.update, {'foo': throttle})
     #
-    # def test_discard(self):
-    #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-    #     rr.discard('foo')
-    #     self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    #     rr.discard('xyz')
-    #     self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    #     rr.discard('baz', 'xyz')
-    #     self.assertQueue(rr, ['bar'], {'bar': 4})
-    #
+    def test_discard(self):
+        rr = self.get_balancer(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
+        rr.discard('foo')
+        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
+
+        rr.discard('xyz')
+        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
+
+        rr.discard('bar', count=1)
+        self.assertQueue(rr, ['bar', 'baz', 'bar'])
+
+        rr.discard('bar', count=-1)
+        self.assertQueue(rr, ['bar', 'baz'])
+
     # def test_clear(self):
     #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
     #     rr.clear()

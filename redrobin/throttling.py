@@ -39,9 +39,8 @@ class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableS
     def add(self, elem):
         self.redis.rpush(self.key, self._pickle(elem))
 
-    def discard(self, elem):
-        raise NotImplementedError
-        #self.redis.srem(self.key, self._pickle(elem))
+    def discard(self, elem, count=0):
+        self.redis.lrem(self.key, count, self._pickle(elem))
 
     def _data(self, pipe=None):
         pipe = pipe if pipe is not None else self.redis
