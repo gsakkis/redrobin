@@ -1,6 +1,6 @@
-# monkeypatch StrictRedis with a zaddnx method
+# monkeypatch StrictRedis with RedisMixin
 import redis
-from .zaddnx import zaddnx
-redis.StrictRedis.zaddnx = zaddnx
+from .mixin import RedisMixin
+redis.StrictRedis.__bases__ += (RedisMixin,)
 
 from .multithrottling import MultiThrottleBalancer
