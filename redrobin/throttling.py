@@ -1,4 +1,3 @@
-import collections
 import json
 import time
 
@@ -6,7 +5,7 @@ import redis_collections
 from .utils import validate_throttle
 
 
-class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableSet):
+class ThrottlingBalancer(redis_collections.RedisCollection):
 
     # list of keys sorted by availability time
     redis_queue_format = 'redrobin:{name}:elements'
