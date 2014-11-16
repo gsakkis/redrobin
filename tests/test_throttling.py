@@ -110,6 +110,16 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr.clear()
         self.assertQueue(rr, [])
 
+    def test_get_set_throttle(self):
+        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
+        self.assertEqual(rr.throttle, 1)
+        rr.throttle = 0
+        self.assertEqual(rr.throttle, 0)
+        # invalid throttle
+        for throttle in -1, '1', None:
+            with self.assertRaises(ValueError):
+                rr.throttle = throttle
+
     # def test_next_empty(self):
     #     rr = self.get_balancer()
     #     self.assertRaises(StopIteration, rr.next)
