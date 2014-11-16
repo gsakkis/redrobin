@@ -6,7 +6,7 @@ import redrobin
 from . import RedisTestCase, MockTime, TIME_DELTA
 
 
-class RedRobinTestCase(RedisTestCase):
+class MultiThrottleBalancerTestCase(RedisTestCase):
 
     def get_balancer(self, throttled_keys=None, name='test'):
         return redrobin.MultiThrottleBalancer(throttled_keys=throttled_keys,
