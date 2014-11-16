@@ -59,6 +59,9 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr.add('foo')
         self.assertQueue(rr, ['foo', 'bar', 'foo'])
 
+        rr.add('foo', 'baz', 'bar')
+        self.assertQueue(rr, ['foo', 'bar', 'foo', 'foo', 'baz', 'bar'])
+
     def test_pop(self):
         rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
 
@@ -76,31 +79,6 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
 
         self.assertRaises(KeyError, rr.pop)
 
-    # def test_update(self):
-    #     rr = self.get_balancer()
-    #     rr.update(dict.fromkeys(['foo', 'bar'], 5))
-    #     self.assertQueue(rr, ['bar', 'foo'], {'foo': 5, 'bar': 5})
-    #
-    #     # baz and xyz are pushed, foo updates its throttle but stays in the same position
-    #     rr.update(dict.fromkeys(['baz', 'foo', 'xyz'], 2))
-    #     self.assertQueue(rr, ['bar', 'foo', 'baz', 'xyz'],
-    #                                {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
-    #
-    #     # update from kwargs
-    #     rr.update(xyz=3, abc=4)
-    #     self.assertQueue(rr, ['bar', 'foo', 'baz', 'xyz', 'abc'],
-    #                                {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 3, 'abc': 4})
-    #
-    #     # update from both a dict and kwargs
-    #     rr.update({'bar': 2, 'mno': 8}, foo=1, ghi=7)
-    #     self.assertQueue(rr, ['bar', 'foo', 'baz', 'xyz', 'abc', 'ghi', 'mno'],
-    #                                {'foo': 1, 'bar': 2, 'baz': 2, 'xyz': 3,
-    #                                 'abc': 4, 'mno': 8, 'ghi': 7})
-    #
-    #     # invalid throttle
-    #     for throttle in -1, '1', None:
-    #         self.assertRaises(ValueError, rr.update, {'foo': throttle})
-    #
     def test_discard(self):
         rr = self.get_balancer(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
         rr.discard('foo')

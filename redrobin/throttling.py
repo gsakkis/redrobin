@@ -35,8 +35,8 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
     def __contains__(self, elem):
         return self.redis.lismember(self.key, self._pickle(elem))
 
-    def add(self, elem):
-        self.redis.rpush(self.key, self._pickle(elem))
+    def add(self, *elems):
+        self.redis.rpush(self.key, *map(self._pickle, elems))
 
     def discard(self, elem, count=0):
         self.redis.lrem(self.key, count, self._pickle(elem))
@@ -61,25 +61,6 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
         pipe = pipe if pipe is not None else self.redis
         pipe.rpush(self.key, *map(self._pickle, data))
 
-    # def update(self, *items):
-    #     if not items:
-    #         return
-    #     if len(items) == 1:
-    #         update = partial(self._update_one, items[0])
-    #     else:
-    #         update = partial(self._update_many, items)
-    #
-    #     self.redis.transaction(update, self.key)
-    #
-    # def _update_many(self, items, pipe):
-    #     # find and add the non existing items
-    #     current_items = set(pipe.zrange(self.key, 0, -1))
-    #     new_items = [item for item in items if item not in current_items]
-    #     if new_items:
-    #         pipe.multi()
-    #         now = time.time()
-    #         pipe.zadd(self.key, **{item: now for item in new_items})
-    #
     # def throttled_until(self):
     #     # get the first (i.e. earliest available) item
     #     throttled_items = self.redis.zrange(self.key, 0, 0, withscores=True)
