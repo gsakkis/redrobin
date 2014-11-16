@@ -34,8 +34,7 @@ class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableS
         return self._data()
 
     def __contains__(self, elem):
-        raise NotImplementedError
-        #return self.redis.lm(self.key, self._pickle(elem))
+        return self.redis.lismember(self.key, self._pickle(elem))
 
     def add(self, elem):
         raise NotImplementedError

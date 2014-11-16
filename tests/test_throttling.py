@@ -34,15 +34,15 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr = self.get_balancer(1, keys)
         self.assertEqual(list(rr), keys)
 
-    # def test_contains(self):
-    #     keys = ['foo', 'bar', 'foo', 'baz']
-    #     rr = self.get_balancer(1, keys)
-    #
-    #     for key in 'foo', 'bar', 'baz':
-    #         self.assertIn(key, rr)
-    #
-    #     for key in 'fooz', 'barz', None:
-    #         self.assertNotIn(key, rr)
+    def test_contains(self):
+        keys = ['foo', 'bar', 'foo', 'baz']
+        rr = self.get_balancer(1, keys)
+
+        for key in 'foo', 'bar', 'baz':
+            self.assertIn(key, rr)
+
+        for key in 'fooz', 'barz', None:
+            self.assertNotIn(key, rr)
 
     # def test_setitem(self):
     #     rr = self.get_balancer()

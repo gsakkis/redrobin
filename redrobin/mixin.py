@@ -29,6 +29,10 @@ class RedisMixin:
 
         return ZADDNX(keys=[name], args=pieces, client=self)
 
+    def lismember(self, name, value):
+        """Return a boolean indicating if ``value`` is a member of list ``name``"""
+        return bool(LISMEMBER(keys=[name], args=[value], client=self))
+
 
 ZADDNX = Script(None, """
 local members = redis.call('ZRANGE', KEYS[1], 0, -1)
@@ -52,4 +56,15 @@ if #missing == 0 then
 end
 
 return redis.call('ZADD', KEYS[1], unpack(missing))
+""")
+
+LISMEMBER = Script(None, """
+local value = ARGV[1]
+local items = redis.call('lrange', KEYS[1], 0, -1)
+for i,item in ipairs(items) do
+    if item == value then
+        return i
+    end
+end
+return 0
 """)
