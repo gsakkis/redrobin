@@ -1,5 +1,5 @@
 import collections
-import marshal
+import json
 import time
 
 import redis_collections
@@ -16,7 +16,7 @@ class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableS
         self.throttle = throttle
         queue_key = self.redis_queue_format.format(name=name)
         super(ThrottlingBalancer, self).__init__(data=keys, redis=connection,
-                                                 key=queue_key, pickler=marshal)
+                                                 key=queue_key, pickler=json)
 
     @property
     def throttle(self):

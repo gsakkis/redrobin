@@ -1,5 +1,5 @@
 import collections
-import marshal
+import json
 import time
 
 import redis_collections
@@ -24,7 +24,7 @@ class MultiThrottleBalancer(redis_collections.Dict):
         super(MultiThrottleBalancer, self).__init__(data=throttled_keys,
                                                     redis=connection,
                                                     key=throttles_key,
-                                                    pickler=marshal)
+                                                    pickler=json)
 
     def __setitem__(self, key, throttle):
         validate_throttle(throttle)
