@@ -43,6 +43,22 @@ class RedRobinTestCase(RedisTestCase):
         self.assertQueuesThrottles(rr, ['abc', 'foo', 'xyz'],
                                    {'abc': 1, 'xyz': 2, 'foo': 4})
 
+    def test_fromkeys(self):
+        rr = redrobin.MultiThrottleBalancer.fromkeys([], name='test',
+                                                    connection=self.test_conn)
+        self.assertQueuesThrottles(rr, [], {})
+
+        rr = redrobin.MultiThrottleBalancer.fromkeys(['foo', 'bar'], 1,
+                                                      name='test',
+                                                      connection=self.test_conn)
+        self.assertQueuesThrottles(rr, ['bar', 'foo'], {'foo': 1, 'bar': 1})
+
+        rr = redrobin.MultiThrottleBalancer.fromkeys(['abc', 'xyz', 'foo'], 0,
+                                                      name='test',
+                                                      connection=self.test_conn)
+        self.assertQueuesThrottles(rr, ['abc', 'foo', 'xyz'],
+                                   {'abc': 0, 'xyz': 0, 'foo': 0})
+
     def test_setitem(self):
         rr = self.get_balancer()
         rr['foo'] = 5
@@ -170,10 +186,9 @@ class RedRobinTestCase(RedisTestCase):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertEqual(dict(rr.iteritems()), {'x': 3, 'y': 4, 'z': 2})
 
-    def test_empty(self):
+    def test_next_empty(self):
         rr = self.get_balancer()
         self.assertRaises(StopIteration, rr.next)
-        self.assertEqual(list(rr), [])
 
     def test_next_unthrottled(self):
         rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))

@@ -1,3 +1,4 @@
+import collections
 import marshal
 import numbers
 import time
@@ -21,7 +22,9 @@ class MultiThrottleBalancer(redis_collections.Dict):
     def __init__(self, throttled_keys=None, connection=None, name='default'):
         self.queue_key = self.redis_keys_format.format(name=name)
         throttles_key = self.redis_throttles_format.format(name=name)
-        if throttled_keys:
+        if throttled_keys is not None:
+            if not isinstance(throttled_keys, collections.Mapping):
+                throttled_keys = dict(throttled_keys)
             for throttle in throttled_keys.itervalues():
                 self._validate_throttle(throttle)
         super(MultiThrottleBalancer, self).__init__(data=throttled_keys,
@@ -89,10 +92,6 @@ class MultiThrottleBalancer(redis_collections.Dict):
             return key, self._unpickle(value)
 
         return self.redis.transaction(popitem_trans, self.key, value_from_callable=True)
-
-    # TODO
-    # @classmethod
-    # def fromkeys(cls, seq, value=None, **kwargs):
 
     def discard(self, *keys):
         with self.redis.pipeline() as pipe:
