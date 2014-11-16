@@ -2,7 +2,7 @@ from itertools import cycle, islice
 import time
 import redrobin
 
-from . import BaseTestCase, MockTime, TIME_DELTA
+from . import BaseTestCase, MockTime
 
 
 class MultiThrottleBalancerTestCase(BaseTestCase):
@@ -12,8 +12,8 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
                                            connection=self.test_conn)
 
     def assertQueue(self, round_robin, expected_queues):
-        queue = map(round_robin._unpickle,
-                    self.test_conn.lrange(round_robin.key, 0, -1))
+        queue = [round_robin._unpickle(v)[0]
+                 for v in self.test_conn.lrange(round_robin.key, 0, -1)]
         self.assertEqual(queue, expected_queues)
 
     def test_init(self):
@@ -120,58 +120,61 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
             with self.assertRaises(ValueError):
                 rr.throttle = throttle
 
-    # def test_next_empty(self):
-    #     rr = self.get_balancer()
-    #     self.assertRaises(StopIteration, rr.next)
-    #
-    # def test_next_unthrottled(self):
-    #     rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], 0))
-    #     for key in islice(cycle(['bar', 'baz', 'foo']), 100):
-    #         self.assertEqual(rr.next(), key)
-    #
-    # @MockTime.patch()
-    # def test_next_throttled(self):
-    #     throttle = 1
-    #     rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
-    #
-    #     # unthrottled
-    #     first_throttled_until = None
-    #     for key in 'bar', 'baz', 'foo':
-    #         with self.assertAlmostEqualDuration(TIME_DELTA):
-    #             self.assertEqual(rr.next(), key)
-    #             if first_throttled_until is None:
-    #                 first_throttled_until = time.time() + throttle
-    #
-    #     # throttled
-    #     with self.assertAlmostEqualDuration(first_throttled_until - time.time()):
-    #         self.assertEqual(rr.next(), 'bar')
-    #
-    #     # unthrottled
-    #     for key in 'baz', 'foo':
-    #         with self.assertAlmostEqualDuration(TIME_DELTA):
-    #             self.assertEqual(rr.next(), key)
-    #
-    # @MockTime.patch()
-    # def test_next_throttled_no_wait(self):
-    #     throttle = 1
-    #     rr = self.get_balancer(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
-    #
-    #     # unthrottled
-    #     for key in 'bar', 'baz', 'foo':
-    #         with self.assertAlmostEqualDuration(TIME_DELTA):
-    #             self.assertEqual(rr.next(wait=False), key)
-    #
-    #     # throttled
-    #     for _ in xrange(10):
-    #         with self.assertAlmostEqualDuration(TIME_DELTA):
-    #             self.assertIsNone(rr.next(wait=False))
-    #
-    #     time.sleep(throttle)
-    #     # unthrottled
-    #     for key in 'bar', 'baz', 'foo':
-    #         with self.assertAlmostEqualDuration(TIME_DELTA):
-    #             self.assertEqual(rr.next(wait=False), key)
-    #
+    def test_next_empty(self):
+        rr = self.get_balancer(1)
+        self.assertRaises(StopIteration, rr.next)
+
+    def test_next_unthrottled(self):
+        keys = ['foo', 'bar', 'foo', 'baz']
+        rr = self.get_balancer(0, keys)
+        for key in islice(cycle(keys), 100):
+            self.assertEqual(rr.next(), key)
+
+    @MockTime.patch()
+    def test_next_throttled(self):
+        throttle = 1
+        keys = ['foo', 'bar', 'foo', 'baz']
+        rr = self.get_balancer(throttle, keys)
+
+        # unthrottled
+        first_throttled_until = None
+        for key in keys:
+            with self.assertAlmostInstant():
+                self.assertEqual(rr.next(), key)
+                if first_throttled_until is None:
+                    first_throttled_until = time.time() + throttle
+
+        # throttled
+        with self.assertAlmostEqualDuration(first_throttled_until - time.time()):
+            self.assertEqual(rr.next(), keys[0])
+
+        # unthrottled
+        for key in keys[1:]:
+            with self.assertAlmostInstant():
+                self.assertEqual(rr.next(), key)
+
+    @MockTime.patch()
+    def test_next_throttled_no_wait(self):
+        throttle = 1
+        keys = ['foo', 'bar', 'foo', 'baz']
+        rr = self.get_balancer(throttle, keys)
+
+        # unthrottled
+        for key in keys:
+            with self.assertAlmostInstant():
+                self.assertEqual(rr.next(wait=False), key)
+
+        # throttled
+        for _ in xrange(10):
+            with self.assertAlmostInstant():
+                self.assertIsNone(rr.next(wait=False))
+
+        time.sleep(throttle)
+        # unthrottled
+        for key in keys:
+            with self.assertAlmostInstant():
+                self.assertEqual(rr.next(wait=False), key)
+
     # @MockTime.patch()
     # def test_throttled_until(self):
     #     throttle = 1
