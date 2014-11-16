@@ -60,6 +60,23 @@ class RedRobinTestCase(RedisTestCase):
             with self.assertRaises(ValueError):
                 rr['foo'] = throttle
 
+    def test_setdefault(self):
+        rr = self.get_balancer()
+        rr.setdefault('foo', 5)
+        self.assertQueuesThrottles(rr, ['foo'], {'foo': 5})
+
+        rr.setdefault('bar', 4)
+        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
+
+        rr.setdefault('foo', 3)
+        self.assertQueuesThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
+
+        # invalid throttle
+        self.assertRaises(ValueError, rr.setdefault, 'foo')
+        for throttle in -1, '1':
+            with self.assertRaises(ValueError):
+                rr.setdefault('foo', throttle)
+
     def test_delitem(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
         del rr['foo']

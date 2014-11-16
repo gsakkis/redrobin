@@ -37,6 +37,15 @@ class MultiThrottleBalancer(redis_collections.Dict):
             pipe.zaddnx(self.queue_key, time.time(), key)
             pipe.execute()
 
+    def setdefault(self, key, throttle=None):
+        self._validate_throttle(throttle)
+        with self.redis.pipeline() as pipe:
+            pipe.hsetnx(self.key, key, self._pickle(throttle))
+            pipe.zaddnx(self.queue_key, time.time(), key)
+            pipe.hget(self.key, key)
+            _, _, value = pipe.execute()
+            return self._unpickle(value)
+
     def update(self, *args, **kwargs):
         throttled_keys = dict(*args, **kwargs)
         if throttled_keys:
@@ -82,7 +91,6 @@ class MultiThrottleBalancer(redis_collections.Dict):
         return self.redis.transaction(popitem_trans, self.key, value_from_callable=True)
 
     # TODO
-    #def setdefault(self, key, default=None):
     # @classmethod
     # def fromkeys(cls, seq, value=None, **kwargs):
 
