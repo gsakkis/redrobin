@@ -65,13 +65,13 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
             raise KeyError
         return self._unpickle(value)[0]
 
-    # def throttled_until(self):
-    #     # get the first (i.e. earliest available) item
-    #     throttled_items = self.redis.zrange(self.key, 0, 0, withscores=True)
-    #     if throttled_items:
-    #         throttled_until = throttled_items[0][1]
-    #         if time.time() < throttled_until:
-    #             return throttled_until
+    def throttled_until(self):
+        # get the first (i.e. earliest available) item
+        throttled_items = self.redis.lrange(self.key, 0, 0)
+        if throttled_items:
+            throttled_until = self._unpickle(throttled_items[0])[1]
+            if time.time() < throttled_until:
+                return throttled_until
 
     def next(self, wait=True):
         def next_trans(pipe):

@@ -2,7 +2,7 @@ from itertools import cycle, islice
 import time
 import redrobin
 
-from . import BaseTestCase, MockTime
+from . import BaseTestCase, MockTime, TIME_DELTA
 
 
 class MultiThrottleBalancerTestCase(BaseTestCase):
@@ -175,26 +175,27 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(wait=False), key)
 
-    # @MockTime.patch()
-    # def test_throttled_until(self):
-    #     throttle = 1
-    #     keys = ['foo', 'bar', 'baz']
-    #     rr = self.get_balancer(dict.fromkeys(keys, throttle))
-    #
-    #     # unthrottled
-    #     first_throttled_until = None
-    #     for _ in keys:
-    #         self.assertIsNone(rr.throttled_until())
-    #         rr.next()
-    #         if first_throttled_until is None:
-    #             first_throttled_until = time.time() + throttle
-    #
-    #     # throttled
-    #     for _ in xrange(10):
-    #         self.assertAlmostEqualTime(rr.throttled_until(), first_throttled_until)
-    #
-    #     time.sleep(throttle)
-    #     # unthrottled
-    #     for _ in keys:
-    #         self.assertIsNone(rr.throttled_until())
-    #         rr.next()
+    @MockTime.patch()
+    def test_throttled_until(self):
+        throttle = 1
+        keys = ['foo', 'bar', 'foo', 'baz']
+        rr = self.get_balancer(throttle, keys)
+
+        # unthrottled
+        first_throttled_until = None
+        for _ in keys:
+            self.assertIsNone(rr.throttled_until())
+            rr.next()
+            if first_throttled_until is None:
+                first_throttled_until = time.time() + throttle
+
+        # throttled
+        for _ in xrange(10):
+            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until,
+                                   delta=2 * TIME_DELTA)
+
+        time.sleep(throttle)
+        # unthrottled
+        for _ in keys:
+            self.assertIsNone(rr.throttled_until())
+            rr.next()
