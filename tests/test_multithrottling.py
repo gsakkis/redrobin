@@ -139,20 +139,16 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         for throttle in -1, '1', None:
             self.assertRaises(ValueError, rr.update, {'foo': throttle})
 
-    def test_discard_existing(self):
+    def test_discard(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
         rr.discard('foo')
         self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
-    def test_discard_missing(self):
-        rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
         rr.discard('xyz')
-        self.assertQueuesThrottles(rr, ['bar', 'baz', 'foo'], {'foo': 3, 'bar': 4, 'baz': 2})
+        self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
-    def test_discard_multiple(self):
-        rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.discard('baz', 'xyz', 'bar')
-        self.assertQueuesThrottles(rr, ['foo'], {'foo': 3})
+        rr.discard('baz', 'xyz')
+        self.assertQueuesThrottles(rr, ['bar'], {'bar': 4})
 
     def test_clear(self):
         rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
@@ -168,7 +164,7 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr = self.get_balancer(dict.fromkeys(keys, 1))
         self.assertItemsEqual(list(rr), keys)
 
-    def test_key_iteritems(self):
+    def test_iteritems(self):
         rr = self.get_balancer({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
         self.assertEqual(dict(rr.iteritems()), {'x': 3, 'y': 4, 'z': 2})
 
