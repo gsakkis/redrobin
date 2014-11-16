@@ -24,6 +24,10 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr = self.get_balancer(1, keys)
         self.assertQueue(rr, keys)
 
+        # invalid throttle
+        for throttle in -1, '1', None:
+            self.assertRaises(ValueError, self.get_balancer, throttle)
+
     def test_len(self):
         keys = ['foo', 'bar', 'foo', 'baz']
         rr = self.get_balancer(1, keys)
@@ -44,23 +48,17 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         for key in 'fooz', 'barz', None:
             self.assertNotIn(key, rr)
 
-    # def test_setitem(self):
-    #     rr = self.get_balancer()
-    #     rr['foo'] = 5
-    #     self.assertQueue(rr, ['foo'], {'foo': 5})
-    #
-    #     rr['bar'] = 4
-    #     self.assertQueue(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
-    #
-    #     # queue not updated but throttle of foo is
-    #     rr['foo'] = 3
-    #     self.assertQueue(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
-    #
-    #     # invalid throttle
-    #     for throttle in -1, '1', None:
-    #         with self.assertRaises(ValueError):
-    #             rr['foo'] = throttle
-    #
+    def test_add(self):
+        rr = self.get_balancer(1)
+        rr.add('foo')
+        self.assertQueue(rr, ['foo'])
+
+        rr.add('bar')
+        self.assertQueue(rr, ['foo', 'bar'])
+
+        rr.add('foo')
+        self.assertQueue(rr, ['foo', 'bar', 'foo'])
+
     # def test_delitem(self):
     #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
     #     del rr['foo']

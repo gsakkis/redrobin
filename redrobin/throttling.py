@@ -37,8 +37,7 @@ class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableS
         return self.redis.lismember(self.key, self._pickle(elem))
 
     def add(self, elem):
-        raise NotImplementedError
-        #return bool(self.redis.sadd(self.key, self._pickle(elem)))
+        self.redis.rpush(self.key, self._pickle(elem))
 
     def discard(self, elem):
         raise NotImplementedError
@@ -62,12 +61,6 @@ class ThrottlingBalancer(redis_collections.RedisCollection, collections.MutableS
     #         update = partial(self._update_many, items)
     #
     #     self.redis.transaction(update, self.key)
-    #
-    # def _update_one(self, item, pipe):
-    #     # add it if it doesn't exist
-    #     if pipe.zscore(self.key, item) is not None:
-    #         pipe.multi()
-    #         pipe.zadd(self.key, time.time(), item)
     #
     # def _update_many(self, items, pipe):
     #     # find and add the non existing items
