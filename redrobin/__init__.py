@@ -67,8 +67,21 @@ class MultiThrottleBalancer(redis_collections.Dict):
                 return default
             return self._unpickle(value)
 
+    def popitem(self):
+        def popitem_trans(pipe):
+            try:
+                key = pipe.hkeys(self.key)[0]
+            except IndexError:
+                raise KeyError
+            value = pipe.hget(self.key, key)
+            pipe.multi()
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            return key, self._unpickle(value)
+
+        return self.redis.transaction(popitem_trans, self.key, value_from_callable=True)
+
     # TODO
-    #def popitem(self):
     #def setdefault(self, key, default=None):
     # @classmethod
     # def fromkeys(cls, seq, value=None, **kwargs):
