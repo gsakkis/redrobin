@@ -119,11 +119,23 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr.discard('bar', count=-1)
         self.assertQueue(rr, ['bar', 'baz'])
 
-    # def test_clear(self):
-    #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-    #     rr.clear()
-    #     self.assertQueue(rr, [], {})
-    #
+    def test_remove(self):
+        rr = self.get_balancer(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
+        rr.remove('foo')
+        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
+
+        with self.assertRaises(KeyError):
+            rr.remove('xyz')
+            self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
+
+        rr.remove('bar', count=1)
+        self.assertQueue(rr, ['bar', 'baz', 'bar'])
+
+    def test_clear(self):
+        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
+        rr.clear()
+        self.assertQueue(rr, [])
+
     # def test_next_empty(self):
     #     rr = self.get_balancer()
     #     self.assertRaises(StopIteration, rr.next)

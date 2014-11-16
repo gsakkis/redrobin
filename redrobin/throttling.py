@@ -41,6 +41,11 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
     def discard(self, elem, count=0):
         self.redis.lrem(self.key, count, self._pickle(elem))
 
+    def remove(self, elem, count=0):
+        removed_count = self.redis.lrem(self.key, count, self._pickle(elem))
+        if not removed_count:
+            raise KeyError(elem)
+
     def _data(self, pipe=None):
         pipe = pipe if pipe is not None else self.redis
         return (self._unpickle(v) for v in pipe.lrange(self.key, 0, -1))
@@ -68,12 +73,6 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
     #         pipe.multi()
     #         now = time.time()
     #         pipe.zadd(self.key, **{item: now for item in new_items})
-    #
-    # def remove(self, *items):
-    #     self.redis.zrem(self.key, *items)
-    #
-    # def clear(self):
-    #     self.redis.delete(self.key)
     #
     # def throttled_until(self):
     #     # get the first (i.e. earliest available) item
