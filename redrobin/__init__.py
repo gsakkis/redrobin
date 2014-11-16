@@ -55,8 +55,19 @@ class MultiThrottleBalancer(redis_collections.Dict):
             if not exists:
                 raise KeyError(key)
 
+    def pop(self, key, default=redis_collections.Dict._Dict__marker):
+        with self.redis.pipeline() as pipe:
+            pipe.hget(self.key, key)
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            value, existed, _ = pipe.execute()
+            if not existed:
+                if default is redis_collections.Dict._Dict__marker:
+                    raise KeyError(key)
+                return default
+            return self._unpickle(value)
+
     # TODO
-    # def pop(self, key, default=__marker):
     #def popitem(self):
     #def setdefault(self, key, default=None):
     # @classmethod

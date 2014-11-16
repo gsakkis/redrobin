@@ -69,6 +69,18 @@ class RedRobinTestCase(RedisTestCase):
             del rr['xyz']
             self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
+    def test_pop(self):
+        rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
+        self.assertEqual(rr.pop('foo'), 3)
+        self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        with self.assertRaises(KeyError):
+            rr.pop('xyz')
+            self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        self.assertEqual(rr.pop('xyz', -1), -1)
+        self.assertQueuesThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
     def test_update(self):
         rr = self.get_balancer()
         rr.update(dict.fromkeys(['foo', 'bar'], 5))
