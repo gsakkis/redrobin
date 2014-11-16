@@ -59,27 +59,23 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
         rr.add('foo')
         self.assertQueue(rr, ['foo', 'bar', 'foo'])
 
-    # def test_delitem(self):
-    #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-    #     del rr['foo']
-    #     self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    #     with self.assertRaises(KeyError):
-    #         del rr['xyz']
-    #         self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    # def test_pop(self):
-    #     rr = self.get_balancer({'foo': 3, 'bar': 4, 'baz': 2})
-    #     self.assertEqual(rr.pop('foo'), 3)
-    #     self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    #     with self.assertRaises(KeyError):
-    #         rr.pop('xyz')
-    #         self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
-    #     self.assertEqual(rr.pop('xyz', -1), -1)
-    #     self.assertQueue(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
-    #
+    def test_pop(self):
+        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
+
+        self.assertEqual(rr.pop(), 'foo')
+        self.assertQueue(rr, ['bar', 'foo', 'baz'])
+
+        self.assertEqual(rr.pop(), 'bar')
+        self.assertQueue(rr, ['foo', 'baz'])
+
+        self.assertEqual(rr.pop(), 'foo')
+        self.assertQueue(rr, ['baz'])
+
+        self.assertEqual(rr.pop(), 'baz')
+        self.assertQueue(rr, [])
+
+        self.assertRaises(KeyError, rr.pop)
+
     # def test_update(self):
     #     rr = self.get_balancer()
     #     rr.update(dict.fromkeys(['foo', 'bar'], 5))

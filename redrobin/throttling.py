@@ -46,6 +46,12 @@ class ThrottlingBalancer(redis_collections.RedisCollection):
         if not removed_count:
             raise KeyError(elem)
 
+    def pop(self):
+        value = self.redis.lpop(self.key)
+        if value is None:
+            raise KeyError
+        return self._unpickle(value)
+
     def _data(self, pipe=None):
         pipe = pipe if pipe is not None else self.redis
         return (self._unpickle(v) for v in pipe.lrange(self.key, 0, -1))
