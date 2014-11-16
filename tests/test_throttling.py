@@ -2,7 +2,7 @@ from itertools import cycle, islice
 import time
 import redrobin
 
-from . import BaseTestCase, MockTime, TIME_DELTA
+from . import BaseTestCase, MockTime
 
 
 class MultiThrottleBalancerTestCase(BaseTestCase):
@@ -145,7 +145,7 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
                     first_throttled_until = time.time() + throttle
 
         # throttled
-        with self.assertAlmostEqualDuration(first_throttled_until - time.time()):
+        with self.assertAlmostBefore(first_throttled_until):
             self.assertEqual(rr.next(), keys[0])
 
         # unthrottled
@@ -191,8 +191,7 @@ class MultiThrottleBalancerTestCase(BaseTestCase):
 
         # throttled
         for _ in xrange(10):
-            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until,
-                                   delta=2 * TIME_DELTA)
+            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until)
 
         time.sleep(throttle)
         # unthrottled

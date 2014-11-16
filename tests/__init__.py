@@ -7,13 +7,13 @@ import redis
 
 
 MOCK_TIME = True
-TIME_DELTA = 1e-3
+TIME_TICK = 1e-3
 
 
 class MockTime(object):
 
     @classmethod
-    def patch(cls, now=0, tick=TIME_DELTA):
+    def patch(cls, now=0, tick=TIME_TICK):
         if not MOCK_TIME:
             return lambda f: f
         self = cls(now, tick)
@@ -55,14 +55,21 @@ class BaseTestCase(unittest.TestCase):
         self.test_conn.flushdb()
 
     @contextmanager
-    def assertAlmostEqualDuration(self, duration):
+    def assertAlmostBefore(self, deadline):
+        try:
+            yield
+        finally:
+            self.assertAlmostEqual(time.time(), deadline)
+
+    @contextmanager
+    def assertAlmostInstant(self):
         start = time.time()
         try:
             yield
         finally:
             end = time.time()
-            # give an order of magnitude slack compared to TIME_DELTA
-            self.assertAlmostEqual(duration, end - start, delta=10 * TIME_DELTA)
+            actual_duration = end - start - TIME_TICK
+            self.assertAlmostEqual(actual_duration, 2 * TIME_TICK)
 
-    def assertAlmostInstant(self):
-        return self.assertAlmostEqualDuration(TIME_DELTA)
+    def assertAlmostEqual(self, first, second, delta=2 * TIME_TICK):
+        super(BaseTestCase, self).assertAlmostEqual(first, second, delta=delta)
