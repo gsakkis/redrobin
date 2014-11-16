@@ -1,29 +1,15 @@
-from contextlib import contextmanager
 from itertools import cycle, islice
 import time
 import redrobin
 
-from . import RedisTestCase, MockTime, TIME_DELTA
+from . import BaseTestCase, MockTime, TIME_DELTA
 
 
-class MultiThrottleBalancerTestCase(RedisTestCase):
+class MultiThrottleBalancerTestCase(BaseTestCase):
 
     def get_balancer(self, throttled_keys=None, name='test'):
         return redrobin.MultiThrottleBalancer(throttled_keys=throttled_keys,
                                               name=name, connection=self.test_conn)
-
-    def assertAlmostEqualTime(self, t1, t2):
-        # give an order of magnitude slack compared to TIME_DELTA
-        self.assertAlmostEqual(t1, t2, delta=10 * TIME_DELTA)
-
-    @contextmanager
-    def assertAlmostEqualDuration(self, duration):
-        start = time.time()
-        try:
-            yield
-        finally:
-            end = time.time()
-            self.assertAlmostEqualTime(duration, end - start)
 
     def assertQueuesThrottles(self, round_robin, expected_queues, expected_throttled_keys):
         queue = self.test_conn.zrange(round_robin.queue_key, 0, -1)
@@ -203,7 +189,7 @@ class MultiThrottleBalancerTestCase(RedisTestCase):
         # unthrottled
         first_throttled_until = None
         for key in 'bar', 'baz', 'foo':
-            with self.assertAlmostEqualDuration(TIME_DELTA):
+            with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
                 if first_throttled_until is None:
                     first_throttled_until = time.time() + throttle
@@ -214,7 +200,7 @@ class MultiThrottleBalancerTestCase(RedisTestCase):
 
         # unthrottled
         for key in 'baz', 'foo':
-            with self.assertAlmostEqualDuration(TIME_DELTA):
+            with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
@@ -224,18 +210,18 @@ class MultiThrottleBalancerTestCase(RedisTestCase):
 
         # unthrottled
         for key in 'bar', 'baz', 'foo':
-            with self.assertAlmostEqualDuration(TIME_DELTA):
+            with self.assertAlmostInstant():
                 self.assertEqual(rr.next(wait=False), key)
 
         # throttled
         for _ in xrange(10):
-            with self.assertAlmostEqualDuration(TIME_DELTA):
+            with self.assertAlmostInstant():
                 self.assertIsNone(rr.next(wait=False))
 
         time.sleep(throttle)
         # unthrottled
         for key in 'bar', 'baz', 'foo':
-            with self.assertAlmostEqualDuration(TIME_DELTA):
+            with self.assertAlmostInstant():
                 self.assertEqual(rr.next(wait=False), key)
 
     @MockTime.patch()
@@ -254,7 +240,8 @@ class MultiThrottleBalancerTestCase(RedisTestCase):
 
         # throttled
         for _ in xrange(10):
-            self.assertAlmostEqualTime(rr.throttled_until(), first_throttled_until)
+            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until,
+                                   delta=TIME_DELTA)
 
         time.sleep(throttle)
         # unthrottled

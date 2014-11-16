@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+import time
 import unittest
 
 import mock
@@ -30,7 +32,7 @@ class MockTime(object):
         self.now += n
 
 
-class RedisTestCase(unittest.TestCase):
+class BaseTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -51,3 +53,16 @@ class RedisTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.test_conn.flushdb()
+
+    @contextmanager
+    def assertAlmostEqualDuration(self, duration):
+        start = time.time()
+        try:
+            yield
+        finally:
+            end = time.time()
+            # give an order of magnitude slack compared to TIME_DELTA
+            self.assertAlmostEqual(duration, end - start, delta=10 * TIME_DELTA)
+
+    def assertAlmostInstant(self):
+        return self.assertAlmostEqualDuration(TIME_DELTA)
