@@ -37,16 +37,10 @@ class RedisMixin:
 
 
 ZADDNX = Script(None, """
-local members = redis.call('ZRANGE', KEYS[1], 0, -1)
-local memberset = {}
-for _,member in pairs(members) do
-    memberset[member] = true
-end
-
 local missing = {}
 for i = 1, #ARGV, 2 do
     local item = ARGV[i+1]
-    if memberset[item] == nil then
+    if redis.call("ZSCORE", KEYS[1], item) == false then
         local score = ARGV[i]
         table.insert(missing, score)
         table.insert(missing, item)
@@ -57,12 +51,12 @@ if #missing == 0 then
     return 0
 end
 
-return redis.call('ZADD', KEYS[1], unpack(missing))
+return redis.call("ZADD", KEYS[1], unpack(missing))
 """)
 
 LISMEMBER = Script(None, """
 local value = ARGV[1]
-local items = redis.call('lrange', KEYS[1], 0, -1)
+local items = redis.call("LRANGE", KEYS[1], 0, -1)
 for i,item in ipairs(items) do
     if item == value then
         return i
