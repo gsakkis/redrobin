@@ -1,7 +1,10 @@
+import logging
 import time
 
 from . import RoundRobinScheduler
 from .utils import validate_throttle
+
+logger = logging.getLogger(__name__)
 
 
 class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
@@ -67,10 +70,12 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
             now = time.time()
-            if now < throttled_until:
+            wait_time = throttled_until - now
+            if wait_time > 0:
                 if not wait:
                     return
-                time.sleep(throttled_until - now)
+                logger.debug("Throttled for %.2fs", wait_time)
+                time.sleep(wait_time)
             # update the item's score to the new time it will stay throttled
             pipe.multi()
             pipe.lpop(self.key)

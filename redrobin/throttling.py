@@ -1,9 +1,12 @@
 import collections
+import logging
 import json
 import time
 
 import redis_collections
 from .utils import validate_throttle
+
+logger = logging.getLogger(__name__)
 
 
 class ThrottlingScheduler(redis_collections.Dict):
@@ -112,10 +115,12 @@ class ThrottlingScheduler(redis_collections.Dict):
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
             now = time.time()
-            if now < throttled_until:
+            wait_time = throttled_until - now
+            if wait_time > 0:
                 if not wait:
                     return
-                time.sleep(throttled_until - now)
+                logger.debug("Throttled for %.3fs", wait_time)
+                time.sleep(wait_time)
 
             # update the key's score to the new time it will stay throttled
             throttle = self._unpickle(pipe.hget(self.key, key))
