@@ -15,15 +15,7 @@ import redrobin
 def worker(jobs):
     scheduler = redrobin.ThrottlingScheduler(connection=redis.StrictRedis(db=REDIS_DB))
     for job in jobs:
-        proxy = scheduler.next(wait=False)
-        if proxy is None:
-            try:
-                logging.info("%s will be throttled for at least %d ms", job,
-                             1000 * (scheduler.throttled_until() - time.time()))
-            except TypeError:
-                # scheduler.throttled_until() returned None due to race condition
-                logging.info("%s is not throttled anymore")
-            proxy = scheduler.next()
+        proxy = scheduler.next()
         logging.info("%s started using %s", job, proxy)
         time.sleep(random.random())
         logging.info("%s finished using %s", job, proxy)
@@ -72,8 +64,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(relativeCreated)6d [%(processName)s:%(threadName)s] %(message)s'
+        level=logging.DEBUG,
+        format='%(relativeCreated)6d [%(processName)s:%(threadName)s:%(name)s] %(message)s'
     )
     REDIS_DB = args.db
     connection = redis.StrictRedis(db=REDIS_DB)
