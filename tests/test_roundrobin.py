@@ -4,10 +4,10 @@ import redrobin
 from . import BaseTestCase
 
 
-class RoundRobinBalancerTestCase(BaseTestCase):
+class RoundRobinSchedulerTestCase(BaseTestCase):
 
-    def get_balancer(self, keys=None, name='test'):
-        return redrobin.RoundRobinBalancer(keys=keys, name=name,
+    def get_scheduler(self, keys=None, name='test'):
+        return redrobin.RoundRobinScheduler(keys=keys, name=name,
                                            connection=self.test_conn)
 
     def assertQueue(self, round_robin, expected_queues):
@@ -15,26 +15,26 @@ class RoundRobinBalancerTestCase(BaseTestCase):
         self.assertEqual(queue, expected_queues)
 
     def test_init(self):
-        rr = self.get_balancer()
+        rr = self.get_scheduler()
         self.assertQueue(rr, [])
 
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(keys)
+        rr = self.get_scheduler(keys)
         self.assertQueue(rr, keys)
 
     def test_len(self):
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(keys)
+        rr = self.get_scheduler(keys)
         self.assertEqual(len(rr), 4)
 
     def test_iter(self):
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(keys)
+        rr = self.get_scheduler(keys)
         self.assertEqual(list(rr), keys)
 
     def test_contains(self):
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(keys)
+        rr = self.get_scheduler(keys)
 
         for key in 'foo', 'bar', 'baz':
             self.assertIn(key, rr)
@@ -43,7 +43,7 @@ class RoundRobinBalancerTestCase(BaseTestCase):
             self.assertNotIn(key, rr)
 
     def test_add(self):
-        rr = self.get_balancer()
+        rr = self.get_scheduler()
         rr.add('foo')
         self.assertQueue(rr, ['foo'])
 
@@ -57,7 +57,7 @@ class RoundRobinBalancerTestCase(BaseTestCase):
         self.assertQueue(rr, ['foo', 'bar', 'foo', 'foo', 'baz', 'bar'])
 
     def test_pop(self):
-        rr = self.get_balancer(['foo', 'bar', 'foo', 'baz'])
+        rr = self.get_scheduler(['foo', 'bar', 'foo', 'baz'])
 
         self.assertEqual(rr.pop(), 'foo')
         self.assertQueue(rr, ['bar', 'foo', 'baz'])
@@ -74,7 +74,7 @@ class RoundRobinBalancerTestCase(BaseTestCase):
         self.assertRaises(KeyError, rr.pop)
 
     def test_discard(self):
-        rr = self.get_balancer(['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
+        rr = self.get_scheduler(['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
         rr.discard('foo')
         self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
@@ -88,7 +88,7 @@ class RoundRobinBalancerTestCase(BaseTestCase):
         self.assertQueue(rr, ['bar', 'baz'])
 
     def test_remove(self):
-        rr = self.get_balancer(['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
+        rr = self.get_scheduler(['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
         rr.remove('foo')
         self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
@@ -100,16 +100,16 @@ class RoundRobinBalancerTestCase(BaseTestCase):
         self.assertQueue(rr, ['bar', 'baz', 'bar'])
 
     def test_clear(self):
-        rr = self.get_balancer(['foo', 'bar', 'foo', 'baz'])
+        rr = self.get_scheduler(['foo', 'bar', 'foo', 'baz'])
         rr.clear()
         self.assertQueue(rr, [])
 
     def test_next_empty(self):
-        rr = self.get_balancer()
+        rr = self.get_scheduler()
         self.assertRaises(StopIteration, rr.next)
 
     def test_next(self):
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(keys)
+        rr = self.get_scheduler(keys)
         for key in islice(cycle(keys), 100):
             self.assertEqual(rr.next(), key)

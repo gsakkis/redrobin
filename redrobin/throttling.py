@@ -1,69 +1,114 @@
+import collections
+import json
 import time
 
-from . import RoundRobinBalancer
+import redis_collections
 from .utils import validate_throttle
 
 
-class ThrottlingBalancer(RoundRobinBalancer):
+class ThrottlingScheduler(redis_collections.Dict):
 
-    redis_queue_format = 'redrobin:{name}:throttled_items'
+    # set of keys sorted by availability time
+    redis_queue_format = 'redrobin:{name}:throttled_keys'
+    # hash of {key: throttle}
+    redis_throttles_format = 'redrobin:{name}:throttles'
 
-    def __init__(self, throttle, keys=None, connection=None, name='default'):
-        self._throttle = None
-        self.throttle = throttle
-        super(ThrottlingBalancer, self).__init__(keys=keys, connection=connection,
-                                                 name=name)
+    def __init__(self, throttled_keys=None, connection=None, name='default'):
+        if throttled_keys is not None:
+            if not isinstance(throttled_keys, collections.Mapping):
+                throttled_keys = dict(throttled_keys)
+            for throttle in throttled_keys.itervalues():
+                validate_throttle(throttle)
+        throttles_key = self.redis_throttles_format.format(name=name)
+        self.queue_key = self.redis_queue_format.format(name=name)
+        super(ThrottlingScheduler, self).__init__(data=throttled_keys,
+                                                    redis=connection,
+                                                    key=throttles_key,
+                                                    pickler=json)
 
-    @property
-    def throttle(self):
-        return self._throttle
+    def __setitem__(self, key, throttle):
+        validate_throttle(throttle)
+        with self.redis.pipeline() as pipe:
+            pipe.hset(self.key, key, self._pickle(throttle))
+            # don't update the deadline if the key exists
+            pipe.zaddnx(self.queue_key, time.time(), key)
+            pipe.execute()
 
-    @throttle.setter
-    def throttle(self, value):
-        validate_throttle(value)
-        self._throttle = value
+    def setdefault(self, key, throttle=None):
+        validate_throttle(throttle)
+        with self.redis.pipeline() as pipe:
+            pipe.hsetnx(self.key, key, self._pickle(throttle))
+            pipe.zaddnx(self.queue_key, time.time(), key)
+            pipe.hget(self.key, key)
+            _, _, value = pipe.execute()
+            return self._unpickle(value)
 
-    def __contains__(self, item):
-        return any(it == item for it in self._data())
+    def update(self, *args, **kwargs):
+        throttled_keys = dict(*args, **kwargs)
+        if throttled_keys:
+            for throttle in throttled_keys.itervalues():
+                validate_throttle(throttle)
+            with self.redis.pipeline() as pipe:
+                self._update(throttled_keys, pipe)
+                pipe.execute()
 
-    def discard(self, item, count=0):
-        def discard_trans(pipe):
-            pickled_throttled_items = pipe.lrange(self.key, 0, -1)
-            indexes = [i for i, pickled in enumerate(pickled_throttled_items)
-                       if self._unpickle(pickled)[0] == item]
-            if not indexes:
-                return
+    def __delitem__(self, key):
+        with self.redis.pipeline() as pipe:
+            pipe.hexists(self.key, key)
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            exists, _, _ = pipe.execute()
+            if not exists:
+                raise KeyError(key)
 
-            if count > 0:
-                del indexes[count:]
-            elif count < 0:
-                del indexes[:count]
+    def pop(self, key, default=redis_collections.Dict._Dict__marker):
+        with self.redis.pipeline() as pipe:
+            pipe.hget(self.key, key)
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            value, existed, _ = pipe.execute()
+            if not existed:
+                if default is redis_collections.Dict._Dict__marker:
+                    raise KeyError(key)
+                return default
+            return self._unpickle(value)
 
+    def popitem(self):
+        def popitem_trans(pipe):
+            try:
+                key = pipe.hkeys(self.key)[0]
+            except IndexError:
+                raise KeyError
+            value = pipe.hget(self.key, key)
             pipe.multi()
-            for i in indexes:
-                pipe.lrem(self.key, 1, pickled_throttled_items[i])
+            pipe.hdel(self.key, key)
+            pipe.zrem(self.queue_key, key)
+            return key, self._unpickle(value)
 
-        return sum(self.redis.transaction(discard_trans, self.key))
+        return self.redis.transaction(popitem_trans, self.key, value_from_callable=True)
 
-    def pop(self):
-        return super(ThrottlingBalancer, self).pop()[0]
+    def discard(self, *keys):
+        with self.redis.pipeline() as pipe:
+            pipe.hdel(self.key, *keys)
+            pipe.zrem(self.queue_key, *keys)
+            pipe.execute()
 
     def throttled_until(self):
-        # get the first (i.e. earliest available) item
-        throttled_items = self.redis.lrange(self.key, 0, 0)
-        if throttled_items:
-            throttled_until = self._unpickle(throttled_items[0])[1]
+        # get the first (i.e. earliest available) key
+        throttled_keys = self.redis.zrange(self.queue_key, 0, 0, withscores=True)
+        if throttled_keys:
+            throttled_until = throttled_keys[0][1]
             if time.time() < throttled_until:
                 return throttled_until
 
     def next(self, wait=True):
         def next_trans(pipe):
-            # get the first (i.e. earliest available) item
-            throttled_items = pipe.lrange(self.key, 0, 0)
-            if not throttled_items:
+            # get the first (i.e. earliest available) key
+            throttled_keys = pipe.zrange(self.queue_key, 0, 0, withscores=True)
+            if not throttled_keys:
                 raise StopIteration
 
-            item, throttled_until = self._unpickle(throttled_items[0])
+            key, throttled_until = throttled_keys[0]
             # if it's throttled, sleep until it becomes unthrottled or return
             # if not waiting
             now = time.time()
@@ -71,19 +116,23 @@ class ThrottlingBalancer(RoundRobinBalancer):
                 if not wait:
                     return
                 time.sleep(throttled_until - now)
-            # update the item's score to the new time it will stay throttled
+
+            # update the key's score to the new time it will stay throttled
+            throttle = self._unpickle(pipe.hget(self.key, key))
             pipe.multi()
-            pipe.lpop(self.key)
-            pipe.rpush(self.key, self._pickle(item, throttle=True))
-            return item
+            pipe.zadd(self.queue_key, time.time() + throttle, key)
+            return key
 
-        return self.redis.transaction(next_trans, self.key, value_from_callable=True)
+        return self.redis.transaction(next_trans, self.queue_key, value_from_callable=True)
 
-    def _data(self, pipe=None):
-        return (it[0] for it in super(ThrottlingBalancer, self)._data(pipe))
+    def _clear(self, pipe=None):
+        pipe = pipe if pipe is not None else self.redis
+        pipe.delete(self.key, self.queue_key)
 
-    def _pickle(self, data, throttle=False):
-        throttled_until = time.time()
-        if throttle:
-            throttled_until += self.throttle
-        return super(ThrottlingBalancer, self)._pickle((data, throttled_until))
+    def _update(self, throttled_keys, pipe=None):
+        pipe = pipe if pipe is not None else self.redis
+        super(ThrottlingScheduler, self)._update(throttled_keys, pipe)
+        now = time.time()
+        items = {key: now for key in throttled_keys.iterkeys()}
+        # don't update the deadlines of existing keys
+        pipe.zaddnx(self.queue_key, **items)

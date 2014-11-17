@@ -13,17 +13,17 @@ import redrobin
 
 
 def worker(jobs):
-    balancer = redrobin.MultiThrottleBalancer(connection=redis.StrictRedis(db=REDIS_DB))
+    scheduler = redrobin.ThrottlingScheduler(connection=redis.StrictRedis(db=REDIS_DB))
     for job in jobs:
-        proxy = balancer.next(wait=False)
+        proxy = scheduler.next(wait=False)
         if proxy is None:
             try:
                 logging.info("%s will be throttled for at least %d ms", job,
-                             1000 * (balancer.throttled_until() - time.time()))
+                             1000 * (scheduler.throttled_until() - time.time()))
             except TypeError:
-                # balancer.throttled_until() returned None due to race condition
+                # scheduler.throttled_until() returned None due to race condition
                 logging.info("%s is not throttled anymore")
-            proxy = balancer.next()
+            proxy = scheduler.next()
         logging.info("%s started using %s", job, proxy)
         time.sleep(random.random())
         logging.info("%s finished using %s", job, proxy)
@@ -85,7 +85,7 @@ if __name__ == '__main__':
         resources = dict.fromkeys(resources, args.throttle)
     print "Resource throttles: {}".format(sorted(resources.items()))
 
-    balancer = redrobin.MultiThrottleBalancer(connection=connection)
-    balancer.clear()
-    balancer.update(resources)
+    scheduler = redrobin.ThrottlingScheduler(connection=connection)
+    scheduler.clear()
+    scheduler.update(resources)
     spawn_processes(args.processes, args.threads, args.jobs)

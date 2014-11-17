@@ -2,13 +2,13 @@ import json
 import redis_collections
 
 
-class RoundRobinBalancer(redis_collections.RedisCollection):
+class RoundRobinScheduler(redis_collections.RedisCollection):
 
     redis_queue_format = 'redrobin:{name}:items'
 
     def __init__(self, keys=None, connection=None, name='default'):
         queue_key = self.redis_queue_format.format(name=name)
-        super(RoundRobinBalancer, self).__init__(data=keys, redis=connection,
+        super(RoundRobinScheduler, self).__init__(data=keys, redis=connection,
                                                  key=queue_key, pickler=json)
 
     def __len__(self):
@@ -57,6 +57,6 @@ class RoundRobinBalancer(redis_collections.RedisCollection):
         return (self._unpickle(v) for v in pipe.lrange(self.key, 0, -1))
 
     def _update(self, data, pipe=None):
-        super(RoundRobinBalancer, self)._update(data, pipe)
+        super(RoundRobinScheduler, self)._update(data, pipe)
         pipe = pipe if pipe is not None else self.redis
         pipe.rpush(self.key, *map(self._pickle, data))

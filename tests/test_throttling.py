@@ -5,140 +5,186 @@ import redrobin
 from . import BaseTestCase, MockTime
 
 
-class ThrottlingBalancerTestCase(BaseTestCase):
+class ThrottlingSchedulerTestCase(BaseTestCase):
 
-    def get_balancer(self, throttle, keys=None, name='test'):
-        return redrobin.ThrottlingBalancer(throttle, keys=keys, name=name,
-                                           connection=self.test_conn)
+    def get_scheduler(self, throttled_keys=None, name='test'):
+        return redrobin.ThrottlingScheduler(throttled_keys=throttled_keys,
+                                              name=name, connection=self.test_conn)
 
-    def assertQueue(self, round_robin, expected_queues):
-        queue = [round_robin._unpickle(v)[0]
-                 for v in self.test_conn.lrange(round_robin.key, 0, -1)]
-        self.assertEqual(queue, expected_queues)
+    def assertQueueThrottles(self, round_robin, expected_queue, expected_throttled_keys):
+        queue = self.test_conn.zrange(round_robin.queue_key, 0, -1)
+        self.assertEqual(queue, expected_queue)
+        throttled_keys = dict(round_robin.iteritems())
+        self.assertItemsEqual(queue, throttled_keys.keys())
+        self.assertEqual(throttled_keys, expected_throttled_keys)
 
     def test_init(self):
-        rr = self.get_balancer(1)
-        self.assertQueue(rr, [])
+        rr = self.get_scheduler()
+        self.assertQueueThrottles(rr, [], {})
 
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(1, keys)
-        self.assertQueue(rr, keys)
+        rr = self.get_scheduler({'foo': 3, 'bar': 4})
+        self.assertQueueThrottles(rr, ['bar', 'foo'], {'foo': 3, 'bar': 4})
 
-        # invalid throttle
-        for throttle in -1, '1', None:
-            self.assertRaises(ValueError, self.get_balancer, throttle)
+        rr = self.get_scheduler({'abc': 1, 'xyz': 2, 'foo': 4})
+        self.assertQueueThrottles(rr, ['abc', 'foo', 'xyz'],
+                                   {'abc': 1, 'xyz': 2, 'foo': 4})
 
-    def test_len(self):
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(1, keys)
-        self.assertEqual(len(rr), 4)
+    def test_fromkeys(self):
+        rr = redrobin.ThrottlingScheduler.fromkeys([], name='test',
+                                                    connection=self.test_conn)
+        self.assertQueueThrottles(rr, [], {})
 
-    def test_iter(self):
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(1, keys)
-        self.assertEqual(list(rr), keys)
+        rr = redrobin.ThrottlingScheduler.fromkeys(['foo', 'bar'], 1,
+                                                      name='test',
+                                                      connection=self.test_conn)
+        self.assertQueueThrottles(rr, ['bar', 'foo'], {'foo': 1, 'bar': 1})
 
-    def test_contains(self):
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(1, keys)
+        rr = redrobin.ThrottlingScheduler.fromkeys(['abc', 'xyz', 'foo'], 0,
+                                                      name='test',
+                                                      connection=self.test_conn)
+        self.assertQueueThrottles(rr, ['abc', 'foo', 'xyz'],
+                                   {'abc': 0, 'xyz': 0, 'foo': 0})
 
-        for key in 'foo', 'bar', 'baz':
-            self.assertIn(key, rr)
+    def test_setitem(self):
+        rr = self.get_scheduler()
+        rr['foo'] = 5
+        self.assertQueueThrottles(rr, ['foo'], {'foo': 5})
 
-        for key in 'fooz', 'barz', None:
-            self.assertNotIn(key, rr)
+        rr['bar'] = 4
+        self.assertQueueThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
 
-    def test_add(self):
-        rr = self.get_balancer(1)
-        rr.add('foo')
-        self.assertQueue(rr, ['foo'])
+        # queue not updated but throttle of foo is
+        rr['foo'] = 3
+        self.assertQueueThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
-        rr.add('bar')
-        self.assertQueue(rr, ['foo', 'bar'])
-
-        rr.add('foo')
-        self.assertQueue(rr, ['foo', 'bar', 'foo'])
-
-        rr.add('foo', 'baz', 'bar')
-        self.assertQueue(rr, ['foo', 'bar', 'foo', 'foo', 'baz', 'bar'])
-
-    def test_pop(self):
-        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
-
-        self.assertEqual(rr.pop(), 'foo')
-        self.assertQueue(rr, ['bar', 'foo', 'baz'])
-
-        self.assertEqual(rr.pop(), 'bar')
-        self.assertQueue(rr, ['foo', 'baz'])
-
-        self.assertEqual(rr.pop(), 'foo')
-        self.assertQueue(rr, ['baz'])
-
-        self.assertEqual(rr.pop(), 'baz')
-        self.assertQueue(rr, [])
-
-        self.assertRaises(KeyError, rr.pop)
-
-    def test_discard(self):
-        rr = self.get_balancer(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
-        rr.discard('foo')
-        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
-
-        rr.discard('xyz')
-        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
-
-        rr.discard('bar', count=1)
-        self.assertQueue(rr, ['bar', 'baz', 'bar'])
-
-        rr.discard('bar', count=-1)
-        self.assertQueue(rr, ['bar', 'baz'])
-
-    def test_remove(self):
-        rr = self.get_balancer(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
-        rr.remove('foo')
-        self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
-
-        with self.assertRaises(KeyError):
-            rr.remove('xyz')
-            self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
-
-        rr.remove('bar', count=1)
-        self.assertQueue(rr, ['bar', 'baz', 'bar'])
-
-    def test_clear(self):
-        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
-        rr.clear()
-        self.assertQueue(rr, [])
-
-    def test_get_set_throttle(self):
-        rr = self.get_balancer(1, ['foo', 'bar', 'foo', 'baz'])
-        self.assertEqual(rr.throttle, 1)
-        rr.throttle = 0
-        self.assertEqual(rr.throttle, 0)
         # invalid throttle
         for throttle in -1, '1', None:
             with self.assertRaises(ValueError):
-                rr.throttle = throttle
+                rr['foo'] = throttle
+
+    def test_setdefault(self):
+        rr = self.get_scheduler()
+        rr.setdefault('foo', 5)
+        self.assertQueueThrottles(rr, ['foo'], {'foo': 5})
+
+        rr.setdefault('bar', 4)
+        self.assertQueueThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
+
+        rr.setdefault('foo', 3)
+        self.assertQueueThrottles(rr, ['foo', 'bar'], {'foo': 5, 'bar': 4})
+
+        # invalid throttle
+        self.assertRaises(ValueError, rr.setdefault, 'foo')
+        for throttle in -1, '1':
+            with self.assertRaises(ValueError):
+                rr.setdefault('foo', throttle)
+
+    def test_delitem(self):
+        rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
+        del rr['foo']
+        self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        with self.assertRaises(KeyError):
+            del rr['xyz']
+            self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+    def test_pop(self):
+        rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
+        self.assertEqual(rr.pop('foo'), 3)
+        self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        with self.assertRaises(KeyError):
+            rr.pop('xyz')
+            self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        self.assertEqual(rr.pop('xyz', -1), -1)
+        self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+    def test_popitem(self):
+        rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
+
+        self.assertEqual(rr.popitem(), ('baz', 2))
+        self.assertQueueThrottles(rr, ['bar', 'foo'], {'bar': 4, 'foo': 3})
+
+        self.assertEqual(rr.popitem(), ('foo', 3))
+        self.assertQueueThrottles(rr, ['bar'], {'bar': 4})
+
+        self.assertEqual(rr.popitem(), ('bar', 4))
+        self.assertQueueThrottles(rr, [], {})
+
+        self.assertRaises(KeyError, rr.popitem)
+
+    def test_update(self):
+        rr = self.get_scheduler()
+        rr.update(dict.fromkeys(['foo', 'bar'], 5))
+        self.assertQueueThrottles(rr, ['bar', 'foo'], {'foo': 5, 'bar': 5})
+
+        # baz and xyz are pushed, foo updates its throttle but stays in the same position
+        rr.update(dict.fromkeys(['baz', 'foo', 'xyz'], 2))
+        self.assertQueueThrottles(rr, ['bar', 'foo', 'baz', 'xyz'],
+                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 2})
+
+        # update from kwargs
+        rr.update(xyz=3, abc=4)
+        self.assertQueueThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'abc'],
+                                   {'foo': 2, 'bar': 5, 'baz': 2, 'xyz': 3, 'abc': 4})
+
+        # update from both a dict and kwargs
+        rr.update({'bar': 2, 'mno': 8}, foo=1, ghi=7)
+        self.assertQueueThrottles(rr, ['bar', 'foo', 'baz', 'xyz', 'abc', 'ghi', 'mno'],
+                                   {'foo': 1, 'bar': 2, 'baz': 2, 'xyz': 3,
+                                    'abc': 4, 'mno': 8, 'ghi': 7})
+
+        # invalid throttle
+        for throttle in -1, '1', None:
+            self.assertRaises(ValueError, rr.update, {'foo': throttle})
+
+    def test_discard(self):
+        rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
+        rr.discard('foo')
+        self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        rr.discard('xyz')
+        self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
+
+        rr.discard('baz', 'xyz')
+        self.assertQueueThrottles(rr, ['bar'], {'bar': 4})
+
+    def test_clear(self):
+        rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
+        rr.clear()
+        self.assertQueueThrottles(rr, [], {})
+
+    def test_keys(self):
+        rr = self.get_scheduler({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
+        self.assertItemsEqual(rr.keys(), ['x', 'y', 'z'])
+
+    def test_iter(self):
+        keys = ['foo', 'bar', 'baz']
+        rr = self.get_scheduler(dict.fromkeys(keys, 1))
+        self.assertItemsEqual(list(rr), keys)
+
+    def test_iteritems(self):
+        rr = self.get_scheduler({'x': 3, 'y': 4, 'z': 2}, name='diff_throttles')
+        self.assertEqual(dict(rr.iteritems()), {'x': 3, 'y': 4, 'z': 2})
 
     def test_next_empty(self):
-        rr = self.get_balancer(1)
+        rr = self.get_scheduler()
         self.assertRaises(StopIteration, rr.next)
 
     def test_next_unthrottled(self):
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(0, keys)
-        for key in islice(cycle(keys), 100):
+        rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], 0))
+        for key in islice(cycle(['bar', 'baz', 'foo']), 100):
             self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
     def test_next_throttled(self):
         throttle = 1
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(throttle, keys)
+        rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
         first_throttled_until = None
-        for key in keys:
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
                 if first_throttled_until is None:
@@ -146,21 +192,20 @@ class ThrottlingBalancerTestCase(BaseTestCase):
 
         # throttled
         with self.assertAlmostBefore(first_throttled_until):
-            self.assertEqual(rr.next(), keys[0])
+            self.assertEqual(rr.next(), 'bar')
 
         # unthrottled
-        for key in keys[1:]:
+        for key in 'baz', 'foo':
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
     def test_next_throttled_no_wait(self):
         throttle = 1
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(throttle, keys)
+        rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
-        for key in keys:
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(wait=False), key)
 
@@ -171,15 +216,15 @@ class ThrottlingBalancerTestCase(BaseTestCase):
 
         time.sleep(throttle)
         # unthrottled
-        for key in keys:
+        for key in 'bar', 'baz', 'foo':
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(wait=False), key)
 
     @MockTime.patch()
     def test_throttled_until(self):
         throttle = 1
-        keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_balancer(throttle, keys)
+        keys = ['foo', 'bar', 'baz']
+        rr = self.get_scheduler(dict.fromkeys(keys, throttle))
 
         # unthrottled
         first_throttled_until = None
