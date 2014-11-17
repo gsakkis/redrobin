@@ -5,7 +5,7 @@ import redrobin
 from . import BaseTestCase, MockTime
 
 
-class MultiThrottleBalancerTestCase(BaseTestCase):
+class ThrottlingBalancerTestCase(BaseTestCase):
 
     def get_balancer(self, throttle, keys=None, name='test'):
         return redrobin.ThrottlingBalancer(throttle, keys=keys, name=name,
