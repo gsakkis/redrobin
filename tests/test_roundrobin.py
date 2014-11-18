@@ -8,10 +8,12 @@ class RoundRobinSchedulerTestCase(BaseTestCase):
 
     def get_scheduler(self, keys=None, name='test'):
         return redrobin.RoundRobinScheduler(keys=keys, name=name,
-                                           connection=self.test_conn)
+                                            connection=self.test_conn)
 
     def assertQueue(self, round_robin, expected_queues):
-        queue = map(round_robin._unpickle, self.test_conn.lrange(round_robin.key, 0, -1))
+        queue = map(round_robin._unpickle,
+                    # list is stored in reverse item order
+                    reversed(self.test_conn.lrange(round_robin.key, 0, -1)))
         self.assertEqual(queue, expected_queues)
 
     def test_init(self):

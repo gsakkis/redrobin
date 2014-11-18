@@ -13,7 +13,8 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
 
     def assertQueue(self, round_robin, expected_queues):
         queue = [round_robin._unpickle(v)[0]
-                 for v in self.test_conn.lrange(round_robin.key, 0, -1)]
+                 # list is stored in reverse item order
+                 for v in reversed(self.test_conn.lrange(round_robin.key, 0, -1))]
         self.assertEqual(queue, expected_queues)
 
     def test_init(self):

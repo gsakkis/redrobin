@@ -30,6 +30,9 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
         return any(it == item for it in self._data())
 
     def discard(self, item, count=0):
+        # negate count because list is stored in reverse
+        count = -count
+
         def discard_trans(pipe):
             pickled_throttled_items = pipe.lrange(self.key, 0, -1)
             indexes = [i for i, pickled in enumerate(pickled_throttled_items)
@@ -52,8 +55,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
         return super(ThrottlingRoundRobinScheduler, self).pop()[0]
 
     def throttled_until(self):
-        # get the first (i.e. earliest available) item
-        throttled_items = self.redis.lrange(self.key, 0, 0)
+        # get the last (i.e. earliest available) item
+        throttled_items = self.redis.lrange(self.key, -1, -1)
         if throttled_items:
             throttled_until = self._unpickle(throttled_items[0])[1]
             if time.time() < throttled_until:
@@ -61,8 +64,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
 
     def next(self, wait=True):
         def next_trans(pipe):
-            # get the first (i.e. earliest available) item
-            throttled_items = pipe.lrange(self.key, 0, 0)
+            # get the last (i.e. earliest available) item
+            throttled_items = pipe.lrange(self.key, -1, -1)
             if not throttled_items:
                 raise StopIteration
 
@@ -78,8 +81,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
                 time.sleep(wait_time)
             # update the item's score to the new time it will stay throttled
             pipe.multi()
-            pipe.lpop(self.key)
-            pipe.rpush(self.key, self._pickle(item, throttle=True))
+            pipe.rpop(self.key)
+            pipe.lpush(self.key, self._pickle(item, throttle=True))
             return item
 
         return self.redis.transaction(next_trans, self.key, value_from_callable=True)
