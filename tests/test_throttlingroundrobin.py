@@ -142,8 +142,8 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
         for key in keys:
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
-                if first_throttled_until is None:
-                    first_throttled_until = time.time() + throttle
+            if first_throttled_until is None:
+                first_throttled_until = time.time() + throttle
 
         # throttled
         with self.assertAlmostBefore(first_throttled_until):
