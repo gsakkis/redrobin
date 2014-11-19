@@ -12,21 +12,24 @@ import redis
 import redrobin
 
 
-def worker(jobs):
-    scheduler = redrobin.ThrottlingScheduler(connection=redis.StrictRedis(db=REDIS_DB))
+def run(jobs):
     for job in jobs:
-        proxy = scheduler.next()
-        logging.info("%s started using %s", job, proxy)
+        logging.info("%s started", job)
+        proxy = SCHEDULER.next()
+        logging.info("%s got %s", job, proxy)
         time.sleep(random.random())
-        logging.info("%s finished using %s", job, proxy)
+        logging.info("%s finished", job)
 
 
 def spawn_threads(num_threads, num_jobs):
-    threads = []
     job_fmt = 'job' + multiprocessing.current_process().name[7:] + '.{}'
     jobs = it.imap(job_fmt.format, it.islice(it.count(1), num_jobs))
+    if num_threads == 0:
+        return run(jobs)
+
+    threads = []
     for i in range(1, num_threads + 1):
-        thread = threading.Thread(name='thread{}'.format(i), target=worker,
+        thread = threading.Thread(name='thread{}'.format(i), target=run,
                                   kwargs={'jobs': jobs})
         threads.append(thread)
         thread.start()
@@ -35,6 +38,9 @@ def spawn_threads(num_threads, num_jobs):
 
 
 def spawn_processes(num_processes, num_threads, num_jobs):
+    if num_processes == 0:
+        return spawn_threads(num_threads, num_jobs)
+
     processes = []
     for i in range(1, num_processes + 1):
         process = multiprocessing.Process(name='process{}'.format(i),
@@ -67,17 +73,20 @@ if __name__ == '__main__':
         level=logging.DEBUG,
         format='%(relativeCreated)6d [%(processName)s:%(threadName)s:%(name)s] %(message)s'
     )
-    REDIS_DB = args.db
-    connection = redis.StrictRedis(db=REDIS_DB)
+    connection = redis.StrictRedis(db=args.db)
     resources = ['resource{}'.format(i) for i in range(1, args.resources + 1)]
     if args.throttle is None:
         throttles = [0.3 + 0.1 * i for i in range(args.resources)]
         resources = dict(zip(resources, throttles))
+        print "Resource throttles: {}".format(sorted(resources.items()))
+        SCHEDULER = redrobin.ThrottlingScheduler(resources, connection=connection)
     else:
-        resources = dict.fromkeys(resources, args.throttle)
-    print "Resource throttles: {}".format(sorted(resources.items()))
+        print "Resources: {}".format(resources)
+        if args.throttle:
+            SCHEDULER = redrobin.ThrottlingRoundRobinScheduler(args.throttle,
+                                                               resources,
+                                                               connection=connection)
+        else:
+            SCHEDULER = redrobin.RoundRobinScheduler(resources, connection=connection)
 
-    scheduler = redrobin.ThrottlingScheduler(connection=connection)
-    scheduler.clear()
-    scheduler.update(resources)
     spawn_processes(args.processes, args.threads, args.jobs)
