@@ -77,7 +77,7 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
             if wait_time > 0:
                 if not wait:
                     return
-                logger.debug("Throttled for %.2fs", wait_time)
+                logger.debug("Waiting %s for %.2fs", item, wait_time)
                 time.sleep(wait_time)
             # update the item's score to the new time it will stay throttled
             pipe.multi()

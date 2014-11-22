@@ -22,7 +22,11 @@ def run(jobs):
 
 
 def spawn_threads(num_threads, num_jobs):
-    job_fmt = 'job' + multiprocessing.current_process().name[7:] + '.{}'
+    proc_name = multiprocessing.current_process().name
+    if proc_name == 'MainProcess':
+        job_fmt = 'job{}'
+    else:
+        job_fmt = 'job' + proc_name[7:] + '.{}'
     jobs = it.imap(job_fmt.format, it.islice(it.count(1), num_jobs))
     if num_threads == 0:
         return run(jobs)
