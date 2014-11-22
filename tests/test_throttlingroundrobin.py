@@ -82,29 +82,32 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
 
     def test_discard(self):
         rr = self.get_scheduler(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
-        rr.discard('foo')
+        self.assertEqual(rr.discard('foo'), 2)
         self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
-        rr.discard('xyz')
+        self.assertEqual(rr.discard('xyz'), 0)
         self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
-        rr.discard('bar', count=1)
+        self.assertEqual(rr.discard('bar', count=1), 1)
         self.assertQueue(rr, ['bar', 'baz', 'bar'])
 
-        rr.discard('bar', count=-1)
+        self.assertEqual(rr.discard('bar', count=-1), 1)
         self.assertQueue(rr, ['bar', 'baz'])
 
     def test_remove(self):
         rr = self.get_scheduler(1, ['foo', 'bar', 'bar', 'foo', 'baz', 'bar'])
-        rr.remove('foo')
+        self.assertEqual(rr.remove('foo'), 2)
         self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
         with self.assertRaises(KeyError):
             rr.remove('xyz')
             self.assertQueue(rr, ['bar', 'bar', 'baz', 'bar'])
 
-        rr.remove('bar', count=1)
+        self.assertEqual(rr.remove('bar', count=1), 1)
         self.assertQueue(rr, ['bar', 'baz', 'bar'])
+
+        self.assertEqual(rr.remove('bar', count=-1), 1)
+        self.assertQueue(rr, ['bar', 'baz'])
 
     def test_clear(self):
         rr = self.get_scheduler(1, ['foo', 'bar', 'foo', 'baz'])

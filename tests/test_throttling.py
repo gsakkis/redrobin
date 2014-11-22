@@ -141,13 +141,13 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
 
     def test_discard(self):
         rr = self.get_scheduler({'foo': 3, 'bar': 4, 'baz': 2})
-        rr.discard('foo')
+        self.assertEqual(rr.discard('foo'), 1)
         self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
-        rr.discard('xyz')
+        self.assertEqual(rr.discard('xyz'), 0)
         self.assertQueueThrottles(rr, ['bar', 'baz'], {'bar': 4, 'baz': 2})
 
-        rr.discard('baz', 'xyz')
+        self.assertEqual(rr.discard('baz', 'xyz'), 1)
         self.assertQueueThrottles(rr, ['bar'], {'bar': 4})
 
     def test_clear(self):

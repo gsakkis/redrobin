@@ -30,6 +30,7 @@ class RoundRobinScheduler(redis_collections.RedisCollection):
         removed_count = self.discard(item, count)
         if not removed_count:
             raise KeyError(item)
+        return removed_count
 
     def discard(self, item, count=0):
         # negate count because list is stored in reverse

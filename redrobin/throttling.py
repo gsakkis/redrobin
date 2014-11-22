@@ -94,7 +94,7 @@ class ThrottlingScheduler(redis_collections.Dict):
         with self.redis.pipeline() as pipe:
             pipe.hdel(self.key, *keys)
             pipe.zrem(self.queue_key, *keys)
-            pipe.execute()
+            return pipe.execute()[0]
 
     def throttled_until(self):
         # get the first (i.e. earliest available) key
