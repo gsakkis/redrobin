@@ -123,7 +123,7 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
 
     def test_next_empty(self):
         rr = self.get_scheduler(1)
-        self.assertRaises(StopIteration, rr.next)
+        self.assertRaises(StopIteration, rr.next, wait=False)
 
     def test_next_unthrottled(self):
         keys = ['foo', 'bar', 'foo', 'baz']

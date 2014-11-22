@@ -63,29 +63,41 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
                 return throttled_until
 
     def next(self, wait=True):
-        def next_trans(pipe):
-            # get the last (i.e. earliest available) item
-            throttled_items = pipe.lrange(self.key, -1, -1)
-            if not throttled_items:
-                raise StopIteration
+        if wait:
+            return self._next_wait()
+        else:
+            return self._next_nowait()
 
-            item, throttled_until = self._unpickle(throttled_items[0])
-            # if it's throttled, sleep until it becomes unthrottled or return
-            # if not waiting
-            now = time.time()
-            wait_time = throttled_until - now
-            if wait_time > 0:
-                if not wait:
-                    return
-                logger.debug("Waiting %s for %.2fs", item, wait_time)
-                time.sleep(wait_time)
-            # update the item's score to the new time it will stay throttled
-            pipe.multi()
-            pipe.rpop(self.key)
-            pipe.lpush(self.key, self._pickle(item, throttle=True))
-            return item
+    def _next_wait(self):
+        # get the last (i.e. earliest available) item
+        pickled_throttled_item = self.redis.brpop(self.key)[1]
+        item, throttled_until = self._unpickle(pickled_throttled_item)
+        # if it's throttled sleep until it becomes unthrottled
+        now = time.time()
+        wait_time = throttled_until - now
+        if wait_time > 0:
+            logger.debug("Waiting %s for %.2fs", item, wait_time)
+            time.sleep(wait_time)
+        # put the item back with the new timestamp
+        self.redis.lpush(self.key, self._pickle(item, throttle=True))
+        return item
 
-        return self.redis.transaction(next_trans, self.key, value_from_callable=True)
+    def _next_nowait(self):
+        # get the last (i.e. earliest available) item
+        pickled_throttled_item = self.redis.rpop(self.key)
+        if pickled_throttled_item is None:
+            raise StopIteration
+        item, throttled_until = self._unpickle(pickled_throttled_item)
+        now = time.time()
+        wait_time = throttled_until - now
+        # if it's throttled put it back and return
+        if wait_time > 0:
+            logger.debug("Not waiting %s for %.2fs", item, wait_time)
+            self.redis.rpush(self.key, pickled_throttled_item)
+            return
+        # put the item back with the new timestamp
+        self.redis.lpush(self.key, self._pickle(item, throttle=True))
+        return item
 
     def _data(self, pipe=None):
         return (it[0] for it in super(ThrottlingRoundRobinScheduler, self)._data(pipe))
