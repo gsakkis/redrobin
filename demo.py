@@ -12,13 +12,24 @@ import redis
 import redrobin
 
 
+def consistency_check():
+    s1 = sorted(SCHEDULER)
+    s2 = sorted(resources)
+    assert s1 == s2, (s1, s2)
+
+
 def run(jobs):
     for job in jobs:
         logging.info("%s started", job)
+        consistency_check()
+
         proxy = SCHEDULER.next()
+        consistency_check()
         logging.info("%s got %s", job, proxy)
+
         time.sleep(random.random())
         logging.info("%s finished", job)
+        consistency_check()
 
 
 def spawn_threads(num_threads, num_jobs):
