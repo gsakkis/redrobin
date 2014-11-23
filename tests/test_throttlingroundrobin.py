@@ -150,7 +150,7 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
                 first_throttled_until = time.time() + throttle
 
         # throttled
-        with self.assertAlmostBefore(first_throttled_until):
+        with self.assertTimeRange(throttle, first_throttled_until):
             self.assertEqual(rr.next(), keys[0])
 
         # unthrottled
@@ -196,7 +196,9 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
 
         # throttled
         for _ in xrange(10):
-            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until)
+            throttled_until = rr.throttled_until()
+            self.assertGreater(throttled_until, throttle)
+            self.assertLessEqual(throttled_until, first_throttled_until)
 
         time.sleep(throttle)
         # unthrottled

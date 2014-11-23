@@ -191,7 +191,7 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
                 first_throttled_until = time.time() + throttle
 
         # throttled
-        with self.assertAlmostBefore(first_throttled_until):
+        with self.assertTimeRange(throttle, first_throttled_until):
             self.assertEqual(rr.next(), 'bar')
 
         # unthrottled

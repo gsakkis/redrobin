@@ -55,11 +55,13 @@ class BaseTestCase(unittest.TestCase):
         self.test_conn.flushdb()
 
     @contextmanager
-    def assertAlmostBefore(self, deadline):
+    def assertTimeRange(self, min_time, max_time):
         try:
             yield
         finally:
-            self.assertAlmostEqual(time.time(), deadline)
+            now = time.time()
+            self.assertGreaterEqual(now, min_time)
+            self.assertLessEqual(now, max_time)
 
     @contextmanager
     def assertAlmostInstant(self):
