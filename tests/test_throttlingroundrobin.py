@@ -26,7 +26,7 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
         self.assertQueue(rr, keys)
 
         # invalid throttle
-        for throttle in -1, '1', None:
+        for throttle in 0, -1, '1', None:
             self.assertRaises(ValueError, self.get_scheduler, throttle)
 
     def test_len(self):
@@ -117,10 +117,10 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
     def test_get_set_throttle(self):
         rr = self.get_scheduler(1, ['foo', 'bar', 'foo', 'baz'])
         self.assertEqual(rr.throttle, 1)
-        rr.throttle = 0
-        self.assertEqual(rr.throttle, 0)
+        rr.throttle = 1e-3
+        self.assertEqual(rr.throttle, 1e-3)
         # invalid throttle
-        for throttle in -1, '1', None:
+        for throttle in 0, -1, '1', None:
             with self.assertRaises(ValueError):
                 rr.throttle = throttle
 
@@ -129,14 +129,14 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
         self.assertRaises(StopIteration, rr.next)
         self.assertRaises(StopIteration, rr.next, wait=False)
 
-    def test_next_unthrottled(self):
+    def test_next(self):
         keys = ['foo', 'bar', 'foo', 'baz']
-        rr = self.get_scheduler(0, keys)
+        rr = self.get_scheduler(1e-3, keys)
         for key in islice(cycle(keys), 100):
             self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
-    def test_next_throttled(self):
+    def test_next_throttled_wait(self):
         throttle = 1
         keys = ['foo', 'bar', 'foo', 'baz']
         start = time.time()

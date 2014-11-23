@@ -39,11 +39,11 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
                                                       connection=self.test_conn)
         self.assertQueueThrottles(rr, ['bar', 'foo'], {'foo': 1, 'bar': 1})
 
-        rr = redrobin.ThrottlingScheduler.fromkeys(['abc', 'xyz', 'foo'], 0,
+        rr = redrobin.ThrottlingScheduler.fromkeys(['abc', 'xyz', 'foo'], 1e-3,
                                                       name='test',
                                                       connection=self.test_conn)
         self.assertQueueThrottles(rr, ['abc', 'foo', 'xyz'],
-                                   {'abc': 0, 'xyz': 0, 'foo': 0})
+                                   {'abc': 1e-3, 'xyz': 1e-3, 'foo': 1e-3})
 
     def test_setitem(self):
         rr = self.get_scheduler()
@@ -58,7 +58,7 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
         self.assertQueueThrottles(rr, ['foo', 'bar'], {'foo': 3, 'bar': 4})
 
         # invalid throttle
-        for throttle in -1, '1', None:
+        for throttle in 0, -1, '1', None:
             with self.assertRaises(ValueError):
                 rr['foo'] = throttle
 
@@ -75,7 +75,7 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
 
         # invalid throttle
         self.assertRaises(ValueError, rr.setdefault, 'foo')
-        for throttle in -1, '1':
+        for throttle in 0, -1, '1':
             with self.assertRaises(ValueError):
                 rr.setdefault('foo', throttle)
 
@@ -136,7 +136,7 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
                                     'abc': 4, 'mno': 8, 'ghi': 7})
 
         # invalid throttle
-        for throttle in -1, '1', None:
+        for throttle in 0, -1, '1', None:
             self.assertRaises(ValueError, rr.update, {'foo': throttle})
 
     def test_discard(self):
@@ -172,13 +172,13 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
         rr = self.get_scheduler()
         self.assertRaises(StopIteration, rr.next)
 
-    def test_next_unthrottled(self):
-        rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], 0))
+    def test_next(self):
+        rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], 1e-3))
         for key in islice(cycle(['bar', 'baz', 'foo']), 100):
             self.assertEqual(rr.next(), key)
 
     @MockTime.patch()
-    def test_next_throttled(self):
+    def test_next_throttled_wait(self):
         throttle = 1
         start = time.time()
         rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
@@ -225,19 +225,22 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
     def test_throttled_until(self):
         throttle = 1
         keys = ['foo', 'bar', 'baz']
+        start = time.time()
         rr = self.get_scheduler(dict.fromkeys(keys, throttle))
 
         # unthrottled
-        first_throttled_until = None
+        first_throttled = None
         for _ in keys:
             self.assertIsNone(rr.throttled_until())
             rr.next()
-            if first_throttled_until is None:
-                first_throttled_until = time.time() + throttle
+            if first_throttled is None:
+                first_throttled = time.time()
 
         # throttled
         for _ in xrange(10):
-            self.assertAlmostEqual(rr.throttled_until(), first_throttled_until)
+            throttled_until = rr.throttled_until()
+            self.assertGreater(throttled_until, start + throttle)
+            self.assertLessEqual(throttled_until, first_throttled + throttle)
 
         time.sleep(throttle)
         # unthrottled
