@@ -4,7 +4,8 @@ import json
 import time
 
 import redis_collections
-from .utils import validate_throttle
+from .utils import validate_throttle, transactional
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class ThrottlingScheduler(redis_collections.Dict):
             return self._unpickle(value)
 
     def popitem(self):
+        @transactional(self.key, value_from_callable=True)
         def popitem_trans(pipe):
             try:
                 key = pipe.hkeys(self.key)[0]
@@ -88,7 +90,7 @@ class ThrottlingScheduler(redis_collections.Dict):
             pipe.zrem(self.queue_key, key)
             return key, self._unpickle(value)
 
-        return self.redis.transaction(popitem_trans, self.key, value_from_callable=True)
+        return popitem_trans(self.redis)
 
     def discard(self, *keys):
         with self.redis.pipeline() as pipe:
@@ -105,7 +107,8 @@ class ThrottlingScheduler(redis_collections.Dict):
                 return throttled_until
 
     def next(self, wait=True):
-        def next_trans(pipe):
+        @transactional(self.queue_key, value_from_callable=True)
+        def next_trans(pipe, wait):
             # get the first (i.e. earliest available) key
             throttled_keys = pipe.zrange(self.queue_key, 0, 0, withscores=True)
             if not throttled_keys:
@@ -122,8 +125,7 @@ class ThrottlingScheduler(redis_collections.Dict):
                 pipe.zadd(self.queue_key, throttled_until, key)
             return key, wait_time
 
-        item, wait_time = self.redis.transaction(next_trans, self.queue_key,
-                                                 value_from_callable=True)
+        item, wait_time = next_trans(self.redis, wait)
         if wait_time > 0:
             if wait:
                 logger.debug("Waiting %s for %.2fs", item, wait_time)

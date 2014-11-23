@@ -1,8 +1,29 @@
+import functools
 import numbers
 
-from redis import RedisError
+from redis import RedisError, WatchError
 from redis.client import Script
 from redis._compat import iteritems
+
+
+def transactional(*watches, **trans_kwargs):
+    shard_hint = trans_kwargs.pop('shard_hint', None)
+    value_from_callable = trans_kwargs.pop('value_from_callable', False)
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(redis, *args, **kwargs):
+            with redis.pipeline(True, shard_hint) as pipe:
+                while 1:
+                    try:
+                        if watches:
+                            pipe.watch(*watches)
+                        func_value = func(pipe, *args, **kwargs)
+                        exec_value = pipe.execute()
+                        return func_value if value_from_callable else exec_value
+                    except WatchError:
+                        continue
+        return wrapper
+    return decorator
 
 
 class RedisMixin:

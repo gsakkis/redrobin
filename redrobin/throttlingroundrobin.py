@@ -2,7 +2,8 @@ import logging
 import time
 
 from . import RoundRobinScheduler
-from .utils import validate_throttle
+from .utils import validate_throttle, transactional
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
         return any(it == item for it in self._data())
 
     def discard(self, item, count=0):
-        # negate count because list is stored in reverse
-        count = -count
-
-        def discard_trans(pipe):
+        @transactional(self.key)
+        def discard_trans(pipe, item, count):
             pickled_throttled_items = pipe.lrange(self.key, 0, -1)
             indexes = [i for i, pickled in enumerate(pickled_throttled_items)
                        if self._unpickle(pickled)[0] == item]
@@ -51,7 +50,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
             for i in indexes:
                 pipe.lrem(self.key, 1, pickled_throttled_items[i])
 
-        return sum(self.redis.transaction(discard_trans, self.key))
+        # negate count because list is stored in reverse
+        return sum(discard_trans(self.redis, item, -count))
 
     def pop(self):
         return super(ThrottlingRoundRobinScheduler, self).pop()[0]
@@ -65,7 +65,8 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
                 return throttled_until
 
     def next(self, wait=True):
-        def next_trans(pipe):
+        @transactional(self.key, value_from_callable=True)
+        def next_trans(pipe, wait):
             # check the last (i.e. earliest available) item
             throttled_items = pipe.lrange(self.key, -1, -1)
             if not throttled_items:
@@ -82,8 +83,7 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
                 pipe.lpush(self.key, self._pickle(item, throttled_until))
             return item, wait_time
 
-        item, wait_time = self.redis.transaction(next_trans, self.key,
-                                                 value_from_callable=True)
+        item, wait_time = next_trans(self.redis, wait)
         if wait_time > 0:
             if wait:
                 logger.debug("Waiting %s for %.2fs", item, wait_time)
