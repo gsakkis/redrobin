@@ -25,9 +25,9 @@ class ThrottlingScheduler(redis_collections.Dict):
         throttles_key = self.redis_throttles_format.format(name=name)
         self.queue_key = self.redis_queue_format.format(name=name)
         super(ThrottlingScheduler, self).__init__(data=throttled_keys,
-                                                    redis=connection,
-                                                    key=throttles_key,
-                                                    pickler=json)
+                                                  redis=connection,
+                                                  key=throttles_key,
+                                                  pickler=json)
 
     def __setitem__(self, key, throttle):
         validate_throttle(throttle)
@@ -110,25 +110,30 @@ class ThrottlingScheduler(redis_collections.Dict):
             throttled_keys = pipe.zrange(self.queue_key, 0, 0, withscores=True)
             if not throttled_keys:
                 raise StopIteration
-
             key, throttled_until = throttled_keys[0]
-            # if it's throttled, sleep until it becomes unthrottled or return
-            # if not waiting
-            now = time.time()
-            wait_time = throttled_until - now
-            if wait_time > 0:
-                if not wait:
-                    return
-                logger.debug("Throttled for %.3fs", wait_time)
+
+            # if it's not throttled or we're waiting, update the queue with the
+            # throttled until timestamp
+            wait_time = throttled_until - time.time()
+            if wait_time <= 0 or wait:
+                throttle = self._unpickle(pipe.hget(self.key, key))
+                throttled_until += throttle
+                pipe.multi()
+                pipe.zadd(self.queue_key, throttled_until, key)
+            return key, wait_time
+
+        item, wait_time = self.redis.transaction(next_trans, self.queue_key,
+                                                 value_from_callable=True)
+        if wait_time > 0:
+            if wait:
+                logger.debug("Waiting %s for %.2fs", item, wait_time)
                 time.sleep(wait_time)
+            else:
+                logger.debug("Not waiting %s for %.2fs", item, wait_time)
+                item = None
 
-            # update the key's score to the new time it will stay throttled
-            throttle = self._unpickle(pipe.hget(self.key, key))
-            pipe.multi()
-            pipe.zadd(self.queue_key, time.time() + throttle, key)
-            return key
+        return item
 
-        return self.redis.transaction(next_trans, self.queue_key, value_from_callable=True)
 
     def _clear(self, pipe=None):
         pipe = pipe if pipe is not None else self.redis
