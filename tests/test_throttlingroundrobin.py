@@ -139,18 +139,19 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
     def test_next_throttled(self):
         throttle = 1
         keys = ['foo', 'bar', 'foo', 'baz']
+        start = time.time()
         rr = self.get_scheduler(throttle, keys)
 
         # unthrottled
-        first_throttled_until = None
+        first_throttled = None
         for key in keys:
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
-            if first_throttled_until is None:
-                first_throttled_until = time.time() + throttle
+            if first_throttled is None:
+                first_throttled = time.time()
 
         # throttled
-        with self.assertTimeRange(throttle, first_throttled_until):
+        with self.assertTimeRange(start + throttle, first_throttled + throttle):
             self.assertEqual(rr.next(), keys[0])
 
         # unthrottled
@@ -184,21 +185,22 @@ class ThrottlingRoundRobinSchedulerTestCase(BaseTestCase):
     def test_throttled_until(self):
         throttle = 1
         keys = ['foo', 'bar', 'foo', 'baz']
+        start = time.time()
         rr = self.get_scheduler(throttle, keys)
 
         # unthrottled
-        first_throttled_until = None
+        first_throttled = None
         for _ in keys:
             self.assertIsNone(rr.throttled_until())
             rr.next()
-            if first_throttled_until is None:
-                first_throttled_until = time.time() + throttle
+            if first_throttled is None:
+                first_throttled = time.time()
 
         # throttled
         for _ in xrange(10):
             throttled_until = rr.throttled_until()
-            self.assertGreater(throttled_until, throttle)
-            self.assertLessEqual(throttled_until, first_throttled_until)
+            self.assertGreater(throttled_until, start + throttle)
+            self.assertLessEqual(throttled_until, first_throttled + throttle)
 
         time.sleep(throttle)
         # unthrottled

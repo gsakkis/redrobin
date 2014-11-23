@@ -180,18 +180,19 @@ class ThrottlingSchedulerTestCase(BaseTestCase):
     @MockTime.patch()
     def test_next_throttled(self):
         throttle = 1
+        start = time.time()
         rr = self.get_scheduler(dict.fromkeys(['foo', 'bar', 'baz'], throttle))
 
         # unthrottled
-        first_throttled_until = None
+        first_throttled = None
         for key in 'bar', 'baz', 'foo':
             with self.assertAlmostInstant():
                 self.assertEqual(rr.next(), key)
-            if first_throttled_until is None:
-                first_throttled_until = time.time() + throttle
+            if first_throttled is None:
+                first_throttled = time.time()
 
         # throttled
-        with self.assertTimeRange(throttle, first_throttled_until):
+        with self.assertTimeRange(start + throttle, first_throttled + throttle):
             self.assertEqual(rr.next(), 'bar')
 
         # unthrottled
