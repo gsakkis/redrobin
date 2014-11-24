@@ -77,7 +77,7 @@ class ThrottlingRoundRobinScheduler(RoundRobinScheduler):
             # timestamp and push it back
             wait_time = throttled_until - time.time()
             if wait_time <= 0 or wait:
-                throttled_until += self.throttle
+                throttled_until = max(throttled_until, time.time()) + self.throttle
                 pipe.multi()
                 pipe.rpop(self.key)
                 pipe.lpush(self.key, self._pickle(item, throttled_until))

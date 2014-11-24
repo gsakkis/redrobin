@@ -120,7 +120,7 @@ class ThrottlingScheduler(redis_collections.Dict):
             wait_time = throttled_until - time.time()
             if wait_time <= 0 or wait:
                 throttle = self._unpickle(pipe.hget(self.key, key))
-                throttled_until += throttle
+                throttled_until = max(throttled_until, time.time()) + throttle
                 pipe.multi()
                 pipe.zadd(self.queue_key, throttled_until, key)
             return key, wait_time
